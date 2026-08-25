@@ -1,0 +1,281 @@
+{
+  "project": {
+    "name": "Event & Table Booking System",
+    "architecture": "Microservices",
+    "database": "PostgreSQL",
+    "cache_and_concurrency": "Redis & PostgreSQL Locks",
+    "event_broker": "RabbitMQ",
+    "dbdiagram_url": "https://dbdiagram.io/d/6a6bbc5a067336e1de3000ef"
+  },
+  "team": [
+    { "id": 1, "developer": "Arman", "service": "Notification Service" },
+    { "id": 2, "developer": "Atay", "service": "Booking Service" },
+    { "id": 3, "developer": "Bayaman", "service": "Venue / Tables Service" },
+    { "id": 4, "developer": "Arybjan", "service": "Auth / Users / Profile & Payment Service" },
+    { "id": 5, "developer": "Daniel", "service": "Events / Catalog Service" }
+  ],
+  "services": {
+    "auth_users_service": {
+      "name": "Auth / Users Service",
+      "developer": "Backend Developer #4 (Arybjan)",
+      "responsibilities": [
+        "User Registration & Login",
+        "OTP verification",
+        "JWT Access & Refresh tokens",
+        "User Profiles",
+        "Roles & Permissions"
+      ],
+      "endpoints": [
+        { "method": "POST", "path": "/api/v1/auth/register", "description": "Register user" },
+        { "method": "POST", "path": "/api/v1/auth/login", "description": "Login & get JWT" },
+        { "method": "POST", "path": "/api/v1/auth/refresh", "description": "Refresh access token" },
+        { "method": "POST", "path": "/api/v1/auth/otp/send", "description": "Send OTP code via SMS" },
+        { "method": "POST", "path": "/api/v1/auth/otp/verify", "description": "Verify OTP" },
+        { "method": "GET", "path": "/api/v1/users/me", "description": "Get current user profile" },
+        { "method": "PATCH", "path": "/api/v1/users/me", "description": "Update user profile" }
+      ]
+    },
+    "events_catalog_service": {
+      "name": "Events / Catalog Service",
+      "developer": "Backend Developer #5 (Daniel)",
+      "responsibilities": [
+        "Events management",
+        "Posters and banners",
+        "Descriptions & Dates",
+        "Event publishing & unpublishing",
+        "Catalog listing and filters"
+      ],
+      "enums": {
+        "EventStatus": ["DRAFT", "PUBLISHED", "CANCELLED", "FINISHED"]
+      },
+      "endpoints": [
+        { "method": "GET", "path": "/api/v1/events", "description": "List published events" },
+        { "method": "GET", "path": "/api/v1/events/{id}", "description": "Get event details" },
+        { "method": "POST", "path": "/api/v1/events", "description": "Create new event (DRAFT)" },
+        { "method": "PATCH", "path": "/api/v1/events/{id}", "description": "Update event" },
+        { "method": "POST", "path": "/api/v1/events/{id}/publish", "description": "Publish event" },
+        { "method": "POST", "path": "/api/v1/events/{id}/unpublish", "description": "Unpublish event" }
+      ]
+    },
+    "venue_tables_service": {
+      "name": "Venue / Tables Service",
+      "developer": "Backend Developer #3 (Bayaman)",
+      "responsibilities": [
+        "Halls / Venues management",
+        "Tables & capacity",
+        "Coordinates (X, Y) on map layout",
+        "Physical table status",
+        "Admin table blocking"
+      ],
+      "architectural_rule": "Venue Service manages physical table existence and admin block status. Booking availability per date/time is handled by Booking Service.",
+      "endpoints": [
+        { "method": "GET", "path": "/api/v1/halls", "description": "List halls" },
+        { "method": "GET", "path": "/api/v1/halls/{id}/tables", "description": "Get tables in hall with map coordinates" },
+        { "method": "POST", "path": "/api/v1/tables", "description": "Create table" },
+        { "method": "PATCH", "path": "/api/v1/tables/{id}/block", "description": "Admin block/unblock table" }
+      ]
+    },
+    "booking_service": {
+      "name": "Booking Service",
+      "developer": "Backend Developer #2 (Atay)",
+      "responsibilities": [
+        "Table booking & availability checks",
+        "Temporary hold on table (PENDING_PAYMENT)",
+        "Booking confirmation & cancellation",
+        "Active bookings & history",
+        "Guest count management",
+        "Double-booking prevention (US-18)"
+      ],
+      "enums": {
+        "BookingStatus": ["PENDING_PAYMENT", "CONFIRMED", "CANCELLED", "EXPIRED"]
+      },
+      "critical_constraints": [
+        "A table CANNOT be double-booked for the same event/time.",
+        "Must be enforced by PostgreSQL transactions, row-level locks, unique constraints / exclusion constraints.",
+        "Redis can be used only as auxiliary fast lock, not the single source of truth."
+      ],
+      "endpoints": [
+        { "method": "POST", "path": "/api/v1/bookings", "description": "Create temporary booking (table_id, event_id, guests)" },
+        { "method": "GET", "path": "/api/v1/bookings/my", "description": "User booking history" },
+        { "method": "GET", "path": "/api/v1/bookings/{id}", "description": "Get booking details" },
+        { "method": "POST", "path": "/api/v1/bookings/{id}/cancel", "description": "Cancel booking" }
+      ]
+    },
+    "notification_service": {
+      "name": "Notification Service",
+      "developer": "Backend Developer #1 (Arman)",
+      "responsibilities": [
+        "In-app Notifications",
+        "Booking confirmations and status updates",
+        "Event notifications & reminders",
+        "SMS dispatch via Nikita API gateway"
+      ],
+      "external_provider": {
+        "sms_gateway": "Nikita SMS (smspro.nikita.kg)",
+        "protocol": "XML over HTTP POST"
+      },
+      "endpoints": [
+        { "method": "POST", "path": "/api/v1/notifications/", "description": "Create notification" },
+        { "method": "GET", "path": "/api/v1/notifications/", "description": "Get user notifications with pagination" },
+        { "method": "GET", "path": "/api/v1/notifications/unread-count", "description": "Count unread notifications" },
+        { "method": "PATCH", "path": "/api/v1/notifications/{id}/read", "description": "Mark single notification read" },
+        { "method": "PATCH", "path": "/api/v1/notifications/read-all", "description": "Mark all user notifications read" },
+        { "method": "POST", "path": "/api/v1/notifications/sms", "description": "Queue SMS sending" },
+        { "method": "GET", "path": "/health", "description": "Service health check" }
+      ]
+    },
+    "payment_service": {
+      "name": "Payment Service",
+      "developer": "Backend Developer #4 (Arybjan)",
+      "responsibilities": [
+        "Payment processing",
+        "Refunds",
+        "Payment provider webhooks",
+        "Payment status state machine"
+      ],
+      "enums": {
+        "PaymentStatus": ["PENDING", "SUCCEEDED", "FAILED", "REFUND_PENDING", "REFUNDED"]
+      },
+      "architectural_rule": "Payment Service does not directly mutate Booking database records. It emits PaymentSucceeded event to trigger Booking confirmation.",
+      "endpoints": [
+        { "method": "POST", "path": "/api/v1/payments", "description": "Initiate payment for booking" },
+        { "method": "GET", "path": "/api/v1/payments/{id}", "description": "Get payment status" },
+        { "method": "POST", "path": "/api/v1/payments/{id}/refund", "description": "Initiate refund" },
+        { "method": "POST", "path": "/api/v1/payments/webhook", "description": "Provider webhook receiver" }
+      ]
+    }
+  },
+  "database_schema": {
+    "tables": {
+      "users": {
+        "description": "User accounts and authentication credentials",
+        "columns": [
+          { "name": "id", "type": "BigInteger", "primary_key": true, "autoincrement": true },
+          { "name": "phone", "type": "String(20)", "unique": true, "nullable": false },
+          { "name": "email", "type": "String(255)", "unique": true, "nullable": true },
+          { "name": "password_hash", "type": "String(255)", "nullable": false },
+          { "name": "role", "type": "String(30)", "default": "USER", "nullable": false },
+          { "name": "is_active", "type": "Boolean", "default": true, "nullable": false },
+          { "name": "created_at", "type": "DateTime(timezone=True)", "server_default": "now()" },
+          { "name": "updated_at", "type": "DateTime(timezone=True)", "server_default": "now()" }
+        ]
+      },
+      "profiles": {
+        "description": "Extended user profile details",
+        "columns": [
+          { "name": "id", "type": "BigInteger", "primary_key": true, "autoincrement": true },
+          { "name": "user_id", "type": "BigInteger", "foreign_key": "users.id", "unique": true, "nullable": false },
+          { "name": "first_name", "type": "String(100)", "nullable": true },
+          { "name": "last_name", "type": "String(100)", "nullable": true },
+          { "name": "avatar_url", "type": "String(500)", "nullable": true },
+          { "name": "created_at", "type": "DateTime(timezone=True)", "server_default": "now()" },
+          { "name": "updated_at", "type": "DateTime(timezone=True)", "server_default": "now()" }
+        ]
+      },
+      "events": {
+        "description": "Catalog of concerts, shows and restaurant events",
+        "columns": [
+          { "name": "id", "type": "BigInteger", "primary_key": true, "autoincrement": true },
+          { "name": "title", "type": "String(255)", "nullable": false },
+          { "name": "description", "type": "Text", "nullable": false },
+          { "name": "poster_url", "type": "String(500)", "nullable": true },
+          { "name": "starts_at", "type": "DateTime(timezone=True)", "nullable": false },
+          { "name": "ends_at", "type": "DateTime(timezone=True)", "nullable": false },
+          { "name": "status", "type": "String(30)", "default": "DRAFT", "nullable": false },
+          { "name": "created_at", "type": "DateTime(timezone=True)", "server_default": "now()" },
+          { "name": "updated_at", "type": "DateTime(timezone=True)", "server_default": "now()" }
+        ]
+      },
+      "halls": {
+        "description": "Venue restaurant halls and zones",
+        "columns": [
+          { "name": "id", "type": "BigInteger", "primary_key": true, "autoincrement": true },
+          { "name": "name", "type": "String(100)", "nullable": false },
+          { "name": "description", "type": "Text", "nullable": true },
+          { "name": "schema_url", "type": "String(500)", "nullable": true },
+          { "name": "created_at", "type": "DateTime(timezone=True)", "server_default": "now()" }
+        ]
+      },
+      "tables": {
+        "description": "Physical restaurant tables with coordinates and capacity",
+        "columns": [
+          { "name": "id", "type": "BigInteger", "primary_key": true, "autoincrement": true },
+          { "name": "hall_id", "type": "BigInteger", "foreign_key": "halls.id", "nullable": false },
+          { "name": "table_number", "type": "String(50)", "nullable": false },
+          { "name": "capacity", "type": "Integer", "nullable": false },
+          { "name": "coordinates_x", "type": "Float", "nullable": false },
+          { "name": "coordinates_y", "type": "Float", "nullable": false },
+          { "name": "is_blocked", "type": "Boolean", "default": false, "nullable": false },
+          { "name": "created_at", "type": "DateTime(timezone=True)", "server_default": "now()" }
+        ]
+      },
+      "bookings": {
+        "description": "Table reservation records for specific events/dates",
+        "columns": [
+          { "name": "id", "type": "BigInteger", "primary_key": true, "autoincrement": true },
+          { "name": "user_id", "type": "BigInteger", "foreign_key": "users.id", "nullable": false, "index": true },
+          { "name": "event_id", "type": "BigInteger", "foreign_key": "events.id", "nullable": false, "index": true },
+          { "name": "table_id", "type": "BigInteger", "foreign_key": "tables.id", "nullable": false, "index": true },
+          { "name": "guests_count", "type": "Integer", "nullable": false },
+          { "name": "status", "type": "String(30)", "default": "PENDING_PAYMENT", "nullable": false },
+          { "name": "expires_at", "type": "DateTime(timezone=True)", "nullable": false },
+          { "name": "created_at", "type": "DateTime(timezone=True)", "server_default": "now()" },
+          { "name": "updated_at", "type": "DateTime(timezone=True)", "server_default": "now()" }
+        ],
+        "constraints": [
+          "UNIQUE (event_id, table_id) WHERE status IN ('PENDING_PAYMENT', 'CONFIRMED')"
+        ]
+      },
+      "payments": {
+        "description": "Financial transactions for bookings",
+        "columns": [
+          { "name": "id", "type": "BigInteger", "primary_key": true, "autoincrement": true },
+          { "name": "booking_id", "type": "BigInteger", "foreign_key": "bookings.id", "nullable": false, "index": true },
+          { "name": "user_id", "type": "BigInteger", "foreign_key": "users.id", "nullable": false, "index": true },
+          { "name": "amount", "type": "Numeric(12, 2)", "nullable": false },
+          { "name": "currency", "type": "String(10)", "default": "KGS", "nullable": false },
+          { "name": "status", "type": "String(30)", "default": "PENDING", "nullable": false },
+          { "name": "provider", "type": "String(50)", "nullable": false },
+          { "name": "provider_payment_id", "type": "String(255)", "nullable": true },
+          { "name": "created_at", "type": "DateTime(timezone=True)", "server_default": "now()" },
+          { "name": "updated_at", "type": "DateTime(timezone=True)", "server_default": "now()" }
+        ]
+      },
+      "notifications": {
+        "description": "In-app and SMS notifications sent to users",
+        "columns": [
+          { "name": "id", "type": "BigInteger", "primary_key": true, "autoincrement": true },
+          { "name": "user_id", "type": "BigInteger", "foreign_key": "users.id", "nullable": false, "index": true },
+          { "name": "title", "type": "String(255)", "nullable": false },
+          { "name": "message", "type": "Text", "nullable": false },
+          { "name": "type", "type": "String(30)", "nullable": false },
+          { "name": "related_event_id", "type": "BigInteger", "foreign_key": "events.id", "nullable": true },
+          { "name": "related_booking_id", "type": "BigInteger", "foreign_key": "bookings.id", "nullable": true },
+          { "name": "is_read", "type": "Boolean", "default": false, "nullable": false },
+          { "name": "created_at", "type": "DateTime(timezone=True)", "server_default": "now()", "nullable": false }
+        ]
+      }
+    },
+    "relationships": [
+      { "from": "profiles.user_id", "to": "users.id", "type": "1:1" },
+      { "from": "tables.hall_id", "to": "halls.id", "type": "N:1" },
+      { "from": "bookings.user_id", "to": "users.id", "type": "N:1" },
+      { "from": "bookings.event_id", "to": "events.id", "type": "N:1" },
+      { "from": "bookings.table_id", "to": "tables.id", "type": "N:1" },
+      { "from": "payments.booking_id", "to": "bookings.id", "type": "N:1" },
+      { "from": "payments.user_id", "to": "users.id", "type": "N:1" },
+      { "from": "notifications.user_id", "to": "users.id", "type": "N:1" },
+      { "from": "notifications.related_event_id", "to": "events.id", "type": "N:1" },
+      { "from": "notifications.related_booking_id", "to": "bookings.id", "type": "N:1" }
+    ]
+  },
+  "workflows": {
+    "booking_and_payment_flow": [
+      { "step": 1, "service": "Booking Service", "action": "User creates booking request", "result_status": "PENDING_PAYMENT" },
+      { "step": 2, "service": "Payment Service", "action": "User pays for the reservation", "result_status": "PaymentSucceeded" },
+      { "step": 3, "service": "Event Broker (RabbitMQ)", "action": "Emits event PaymentSucceeded to Booking Service", "payload": "{ booking_id, user_id, amount }" },
+      { "step": 4, "service": "Booking Service", "action": "Receives PaymentSucceeded event and confirms reservation", "result_status": "CONFIRMED" },
+      { "step": 5, "service": "Notification Service", "action": "Sends confirmation push notification & SMS to user", "type": "booking_confirmed" }
+    ]
+  }
+}
