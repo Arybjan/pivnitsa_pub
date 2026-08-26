@@ -4,15 +4,7 @@ from sqlalchemy import select, update, func
 
 from app.core.database import get_db
 from app.models.notification import Notification
-from app.schemas.notification import (
-    BigIntId,
-    BigIntPath,
-    NotificationCreate,
-    NotificationResponse,
-    UnreadCountResponse,
-    SendSMSRequest,
-    SendSMSResponse,
-)
+from app.schemas.notification import BigIntId, BigIntPath, NotificationCreate, NotificationResponse, UnreadCountResponse, SendSMSRequest, SendSMSResponse
 from app.services.sms_service import send_sms_via_nikita
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
@@ -27,13 +19,7 @@ async def create_notification(data: NotificationCreate, db: AsyncSession = Depen
 
 
 @router.get("/", response_model=list[NotificationResponse])
-async def get_user_notifications(
-    user_id: BigIntId,
-    unread_only: bool = False,
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db)
-):
+async def get_user_notifications(user_id: BigIntId, unread_only: bool = False, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db)):
     query = select(Notification).where(Notification.user_id == user_id)
     if unread_only:
         query = query.where(Notification.is_read == False)

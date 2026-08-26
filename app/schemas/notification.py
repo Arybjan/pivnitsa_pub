@@ -14,22 +14,14 @@ class NotificationCreate(SafeBaseModel):
 
 
 class NotificationResponse(BaseModel):
-    id: int
-    user_id: int
-    title: str
-    message: str
-    type: str
-    related_event_id: int | None = None
-    related_booking_id: int | None = None
-    is_read: bool | None = False
+    id: int; user_id: int; title: str; message: str; type: str
+    related_event_id: int | None = None; related_booking_id: int | None = None; is_read: bool | None = False
     created_at: datetime
-
     model_config = ConfigDict(from_attributes=True)
 
 
 class UnreadCountResponse(BaseModel):
-    user_id: int
-    unread_count: int
+    user_id: int; unread_count: int
 
 
 class SendSMSRequest(SafeBaseModel):
@@ -44,5 +36,4 @@ class SendSMSRequest(SafeBaseModel):
 
 
 class SendSMSResponse(BaseModel):
-    status: str
-    message: str
+    status: str; message: str
