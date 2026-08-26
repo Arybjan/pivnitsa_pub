@@ -237,9 +237,10 @@ async def test_error_notification_not_found(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_error_unknown_endpoint_404(client: AsyncClient):
     """Проверка 404 для несуществующих путей"""
-    res = await client.get("/api/v1/notifications/some_random_route")
+    res = await client.get("/api/v1/unknown_route/path")
     assert res.status_code == 404
     assert res.json() == {"detail": "Not Found"}
+
 
 
 # ====================================================================

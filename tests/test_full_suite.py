@@ -231,6 +231,50 @@ async def test_mark_all_as_read(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_get_notification_by_id_success(client: AsyncClient):
+    # Create notification
+    res = await client.post("/api/v1/notifications/", json={
+        "user_id": 333, "title": "Specific Title", "message": "Specific Message", "type": "info"
+    })
+    notif_id = res.json()["id"]
+
+    # Get by ID
+    get_res = await client.get(f"/api/v1/notifications/{notif_id}")
+    assert get_res.status_code == 200
+    assert get_res.json()["id"] == notif_id
+    assert get_res.json()["title"] == "Specific Title"
+
+
+@pytest.mark.asyncio
+async def test_get_notification_by_id_not_found(client: AsyncClient):
+    get_res = await client.get("/api/v1/notifications/99999999")
+    assert get_res.status_code == 404
+    assert get_res.json() == {"detail": "Notification not found"}
+
+
+@pytest.mark.asyncio
+async def test_delete_notification(client: AsyncClient):
+    # Create notification
+    res = await client.post("/api/v1/notifications/", json={
+        "user_id": 444, "title": "To Delete", "message": "msg", "type": "info"
+    })
+    notif_id = res.json()["id"]
+
+    # Delete
+    del_res = await client.delete(f"/api/v1/notifications/{notif_id}")
+    assert del_res.status_code == 200
+    assert del_res.json() == {"status": "ok", "message": "Notification deleted"}
+
+    # Fetch again should return 404
+    get_res = await client.get(f"/api/v1/notifications/{notif_id}")
+    assert get_res.status_code == 404
+
+    # Delete again should return 404
+    del_again = await client.delete(f"/api/v1/notifications/{notif_id}")
+    assert del_again.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_sms_endpoint_triggers_service(client: AsyncClient):
     with patch("app.api.v1.notifications.send_sms_via_nikita", new_callable=AsyncMock) as mock_nikita:
         mock_nikita.return_value = True
@@ -241,6 +285,7 @@ async def test_sms_endpoint_triggers_service(client: AsyncClient):
             "status": "success",
             "message": "SMS queued for +996 (555) 11-22-33"
         }
+
 
 
 # ==========================================

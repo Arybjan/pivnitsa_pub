@@ -117,9 +117,10 @@
       "endpoints": [
         { "method": "POST", "path": "/api/v1/notifications/", "description": "Create notification" },
         { "method": "GET", "path": "/api/v1/notifications/", "description": "Get user notifications with pagination" },
-        { "method": "GET", "path": "/api/v1/notifications/unread-count", "description": "Count unread notifications" },
+        { "method": "GET", "path": "/api/v1/notifications/{id}", "description": "Get notification by ID" },
         { "method": "PATCH", "path": "/api/v1/notifications/{id}/read", "description": "Mark single notification read" },
         { "method": "PATCH", "path": "/api/v1/notifications/read-all", "description": "Mark all user notifications read" },
+        { "method": "DELETE", "path": "/api/v1/notifications/{id}", "description": "Delete single notification" },
         { "method": "POST", "path": "/api/v1/notifications/sms", "description": "Queue SMS sending" },
         { "method": "GET", "path": "/health", "description": "Service health check" }
       ]

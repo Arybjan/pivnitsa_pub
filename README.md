@@ -52,8 +52,10 @@ requirements.txt          - зависимости
 - `POST /api/v1/notifications/` — Создание уведомления.
 - `GET /api/v1/notifications/` — Список уведомлений пользователя (user_id, unread_only, limit, offset).
 - `GET /api/v1/notifications/unread-count` — Количество непрочитанных уведомлений (user_id).
+- `GET /api/v1/notifications/{notification_id}` — Получение одного уведомления по ID.
 - `PATCH /api/v1/notifications/{notification_id}/read` — Пометить одно уведомление как прочитанное.
 - `PATCH /api/v1/notifications/read-all` — Пометить все уведомления пользователя как прочитанные (user_id).
+- `DELETE /api/v1/notifications/{notification_id}` — Удалить уведомление.
 - `POST /api/v1/notifications/sms` — Отправка SMS через провайдер Nikita в фоне (phone_number, message).
 - `GET /health` — Проверка работы сервиса.
 
