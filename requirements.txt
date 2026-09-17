@@ -42,3 +42,6 @@ typing-inspection==0.4.4       # Инспекция типов для Pydantic �
 uvloop==0.22.1                 # Ускоренный event-loop на C для Linux
 watchfiles==1.2.0              # Отслеживание изменений файлов при запуске с флагом --reload
 websockets==17.0.1             # Поддержка протокола WebSockets для Uvicorn
+
+# --- Брокер сообщений (RabbitMQ) ---
+aio-pika==10.0.1               # Асинхронный клиент RabbitMQ для интеграции событий
