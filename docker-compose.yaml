@@ -1,44 +1,39 @@
 services:
 
-  auth-service:
+  booking-service:
     build: .
-    container_name: pivnitsa-auth
+    container_name: pivnitsa-booking
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/booking_db
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
-      - "8001:8000"
+      - "8002:8000"
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_started
 
   postgres:
     image: postgres:17
-    container_name: pivnitsa-auth-postgres
+    container_name: pivnitsa-booking-postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: auth_db
+      POSTGRES_DB: booking_db
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
-      - auth_postgres_data:/var/lib/postgresql/data
+      - booking_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U postgres -d auth_db"
+          "pg_isready -U postgres -d booking_db"
         ]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:8-alpine
-    container_name: pivnitsa-auth-redis
-    ports:
-      - "6379:6379"
-
 volumes:
-  auth_postgres_data:
+  booking_postgres_data:
