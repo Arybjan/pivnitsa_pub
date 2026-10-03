@@ -190,6 +190,7 @@ async def start_event_consumer():
 
             for b_key in booking_keys:
                 await service_queue.bind(bookings_exchange, routing_key=b_key)
+                await service_queue.bind(events_exchange, routing_key=b_key)
                 await service_queue.bind(channel.default_exchange, routing_key=b_key)
 
             await service_queue.consume(_on_message)
