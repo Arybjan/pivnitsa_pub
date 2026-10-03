@@ -13,7 +13,7 @@ from pydantic import (
 
 from app.models import TableStatus
 
-PositiveInt = Annotated[int, Field(gt=0, strict=True)]
+PositiveInt = Annotated[int, Field(gt=0, le=2_147_483_647, strict=True)]
 Coordinate = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
 Rotation = Annotated[float, Field(ge=0, lt=360, allow_inf_nan=False)]
 Name = Annotated[str, Field(min_length=1, max_length=100)]

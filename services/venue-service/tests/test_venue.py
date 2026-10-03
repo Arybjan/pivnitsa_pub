@@ -132,6 +132,7 @@ def test_number_unique_in_hall_and_filters(client, admin, table):
         {"capacity": -1},
         {"capacity": True},
         {"number": 0},
+        {"number": 2_147_483_648},
         {"x": -0.1},
         {"y": 1.1},
         {"rotation": 360},
@@ -148,6 +149,24 @@ def test_invalid_table_changes(client, admin, table, patch):
         ).status_code
         == 422
     )
+
+
+@pytest.mark.parametrize("number,status", [(2_147_483_647, 201), (2_147_483_648, 422)])
+def test_table_number_storage_range(client, admin, hall, number, status):
+    response = client.post(
+        "/api/v1/tables",
+        headers=admin,
+        json={
+            "hall_id": hall["id"],
+            "number": number,
+            "capacity": 4,
+            "x": 0,
+            "y": 0,
+        },
+    )
+    assert response.status_code == status
+    if status == 201:
+        assert response.json()["number"] == number
 
 
 @pytest.mark.parametrize(
