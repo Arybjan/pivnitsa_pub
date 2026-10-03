@@ -8,7 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import async_session_maker
+from app.core.templates import render_notification, render_sms
 from app.models.notification import Notification
+from app.services.sms_service import send_sms_via_nikita
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,7 @@ async def process_event_message(routing_key: str, data: dict[str, Any], session:
     notif_type = ""
     related_event_id = event_id
     related_booking_id = None
+    formatted_date = ""
 
     if routing_key == "event.published":
         start_datetime = data.get("start_datetime", "")
@@ -42,53 +45,45 @@ async def process_event_message(routing_key: str, data: dict[str, Any], session:
         except Exception:
             pass
 
-        notif_title = f"Анонс: {title}"
-        notif_message = (
-            f"Мероприятие «{title}» запланировано на {formatted_date}. "
-            f"Бронируйте столики заранее!"
-        )
         notif_type = "event_published"
+        notif_title, notif_message = render_notification(
+            notif_type, title=title, date=formatted_date
+        )
 
     elif routing_key == "event.cancelled":
-        notif_title = f"Отмена мероприятия: {title}"
-        notif_message = f"К сожалению, мероприятие «{title}» было отменено."
         notif_type = "event_cancelled"
+        notif_title, notif_message = render_notification(notif_type, title=title)
 
     elif routing_key == "event.updated":
-        notif_title = f"Обновление мероприятия: {title}"
-        notif_message = f"Информация о мероприятии «{title}» была обновлена. Проверьте детали в афише."
         notif_type = "event_updated"
+        notif_title, notif_message = render_notification(notif_type, title=title)
 
     elif routing_key == "booking.created":
-        notif_title = "Бронь столика создана"
-        notif_message = f"Столик №{table_id} временно забронирован. Пожалуйста, оплатите бронь в течение 10 минут."
         notif_type = "booking_created"
         related_booking_id = booking_id
+        notif_title, notif_message = render_notification(notif_type, table_number=table_id)
 
     elif routing_key == "booking.confirmed":
-        notif_title = "Бронь подтверждена"
-        notif_message = f"Ваша бронь столика №{table_id} успешно подтверждена!"
         notif_type = "booking_confirmed"
         related_booking_id = booking_id
+        notif_title, notif_message = render_notification(notif_type, table_number=table_id)
 
     elif routing_key == "booking.cancelled":
-        notif_title = "Бронь отменена"
-        notif_message = f"Бронь столика №{table_id} была отменена."
         notif_type = "booking_cancelled"
         related_booking_id = booking_id
+        notif_title, notif_message = render_notification(notif_type, table_number=table_id)
 
     elif routing_key == "booking.expired":
-        notif_title = "Время брони истекло"
-        notif_message = f"Время ожидания оплаты для столика №{table_id} истекло, бронь аннулирована."
         notif_type = "booking_expired"
         related_booking_id = booking_id
+        notif_title, notif_message = render_notification(notif_type, table_number=table_id)
 
     else:
         logger.warning(f"Unknown routing key: {routing_key}")
         return []
 
-    target_user_ids: list[int] = []
-    if "user_id" in data and data["user_id"]:
+    target_user_ids: list[int | None] = []
+    if "user_id" in data and data["user_id"] is not None:
         target_user_ids.append(int(data["user_id"]))
     elif "target_user_ids" in data and isinstance(data["target_user_ids"], list):
         target_user_ids.extend([int(uid) for uid in data["target_user_ids"]])
@@ -98,9 +93,13 @@ async def process_event_message(routing_key: str, data: dict[str, Any], session:
     created_notifications: list[Notification] = []
     for user_id in target_user_ids:
         query = select(Notification).where(
-            Notification.user_id == user_id,
             Notification.type == notif_type
         )
+        if user_id is None:
+            query = query.where(Notification.user_id.is_(None))
+        else:
+            query = query.where(Notification.user_id == user_id)
+
         if related_event_id is not None:
             query = query.where(Notification.related_event_id == related_event_id)
         if related_booking_id is not None:
@@ -127,6 +126,18 @@ async def process_event_message(routing_key: str, data: dict[str, Any], session:
     logger.info(
         f"Saved {len(created_notifications)} notification(s) (type={notif_type})"
     )
+
+    phone = data.get("phone") or data.get("phone_number")
+    if phone:
+        sms_text = render_sms(
+            notif_type,
+            title=title,
+            date=formatted_date,
+            table_number=table_id,
+        )
+        if sms_text:
+            asyncio.create_task(send_sms_via_nikita(str(phone), sms_text))
+
     return created_notifications
 
 
@@ -168,18 +179,20 @@ async def start_event_consumer():
                 durable=True,
             )
 
+            service_queue = await channel.declare_queue("notifications_service_queue", durable=True)
+
             event_keys = ["event.published", "event.cancelled", "event.updated"]
             booking_keys = ["booking.created", "booking.confirmed", "booking.cancelled", "booking.expired"]
 
             for r_key in event_keys:
-                queue = await channel.declare_queue(r_key, durable=True)
-                await queue.bind(events_exchange, routing_key=r_key)
-                await queue.consume(_on_message)
+                await service_queue.bind(events_exchange, routing_key=r_key)
+                await service_queue.bind(channel.default_exchange, routing_key=r_key)
 
             for b_key in booking_keys:
-                queue = await channel.declare_queue(b_key, durable=True)
-                await queue.bind(bookings_exchange, routing_key=b_key)
-                await queue.consume(_on_message)
+                await service_queue.bind(bookings_exchange, routing_key=b_key)
+                await service_queue.bind(channel.default_exchange, routing_key=b_key)
+
+            await service_queue.consume(_on_message)
 
             logger.info("Successfully subscribed to RabbitMQ event and booking queues.")
 

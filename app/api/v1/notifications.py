@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, or_
 
 from app.core.database import get_db
 from app.core.security import AuthenticatedUser, get_current_user, require_service_or_admin
@@ -23,7 +23,7 @@ async def create_notification(data: NotificationCreate, auth: AuthenticatedUser 
 async def get_user_notifications(user_id: BigIntId, current_user: AuthenticatedUser = Depends(get_current_user), unread_only: bool = False, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db)):
     if not current_user.is_admin_or_service and user_id != current_user.user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    query = select(Notification).where(Notification.user_id == user_id)
+    query = select(Notification).where(or_(Notification.user_id == user_id, Notification.user_id.is_(None)))
     if unread_only:
         query = query.where(Notification.is_read == False)
     query = query.order_by(Notification.created_at.desc()).limit(limit).offset(offset)
@@ -35,7 +35,7 @@ async def get_user_notifications(user_id: BigIntId, current_user: AuthenticatedU
 async def get_unread_count(user_id: BigIntId, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not current_user.is_admin_or_service and user_id != current_user.user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    query = select(func.count(Notification.id)).where(Notification.user_id == user_id, Notification.is_read == False)
+    query = select(func.count(Notification.id)).where(or_(Notification.user_id == user_id, Notification.user_id.is_(None)), Notification.is_read == False)
     result = await db.execute(query)
     count = result.scalar() or 0
     return UnreadCountResponse(user_id=user_id, unread_count=count)
@@ -46,7 +46,7 @@ async def get_notification_by_id(notification_id: BigIntPath, current_user: Auth
     notification = await db.get(Notification, notification_id)
     if not notification:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
-    if not current_user.is_admin_or_service and notification.user_id != current_user.user_id:
+    if not current_user.is_admin_or_service and notification.user_id is not None and notification.user_id != current_user.user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     return notification
 
@@ -56,7 +56,7 @@ async def mark_as_read(notification_id: BigIntPath, current_user: AuthenticatedU
     notification = await db.get(Notification, notification_id)
     if not notification:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
-    if not current_user.is_admin_or_service and notification.user_id != current_user.user_id:
+    if not current_user.is_admin_or_service and notification.user_id is not None and notification.user_id != current_user.user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     notification.is_read = True
     await db.commit()
@@ -67,7 +67,7 @@ async def mark_as_read(notification_id: BigIntPath, current_user: AuthenticatedU
 async def mark_all_as_read(user_id: BigIntId, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not current_user.is_admin_or_service and user_id != current_user.user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    stmt = update(Notification).where(Notification.user_id == user_id, Notification.is_read == False).values(is_read=True)
+    stmt = update(Notification).where(or_(Notification.user_id == user_id, Notification.user_id.is_(None)), Notification.is_read == False).values(is_read=True)
     result = await db.execute(stmt)
     await db.commit()
     return {"status": "ok", "user_id": user_id, "updated_count": result.rowcount}
@@ -78,6 +78,8 @@ async def delete_notification(notification_id: BigIntPath, current_user: Authent
     notification = await db.get(Notification, notification_id)
     if not notification:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    if notification.user_id is None and not current_user.is_admin_or_service:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot delete broadcast notification")
     if not current_user.is_admin_or_service and notification.user_id != current_user.user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     await db.delete(notification)

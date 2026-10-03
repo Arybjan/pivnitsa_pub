@@ -5,7 +5,7 @@ from app.schemas.base import SafeBaseModel, BigIntId, BigIntPath
 
 
 class NotificationCreate(SafeBaseModel):
-    user_id: BigIntId
+    user_id: BigIntId | None = Field(...)
     title: str = Field(..., min_length=1, max_length=255)
     message: str = Field(..., min_length=1, max_length=65535)
     type: str = Field(..., min_length=1, max_length=30)
@@ -15,7 +15,7 @@ class NotificationCreate(SafeBaseModel):
 
 class NotificationResponse(BaseModel):
     id: int
-    user_id: int
+    user_id: int | None = None
     title: str
     message: str
     type: str
