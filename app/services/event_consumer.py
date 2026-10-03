@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any
 import aio_pika
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import async_session_maker
@@ -65,6 +66,17 @@ async def process_event_message(routing_key: str, data: dict[str, Any], session:
 
     created_notifications: list[Notification] = []
     for user_id in target_user_ids:
+        if event_id is not None:
+            existing = await session.execute(
+                select(Notification).where(
+                    Notification.user_id == user_id,
+                    Notification.type == notif_type,
+                    Notification.related_event_id == event_id
+                )
+            )
+            if existing.scalars().first():
+                continue
+
         notification = Notification(
             user_id=user_id,
             title=notif_title,
@@ -77,7 +89,8 @@ async def process_event_message(routing_key: str, data: dict[str, Any], session:
         session.add(notification)
         created_notifications.append(notification)
 
-    await session.commit()
+    if created_notifications:
+        await session.commit()
     logger.info(
         f"Saved {len(created_notifications)} notification(s) for event_id={event_id} (type={notif_type})"
     )

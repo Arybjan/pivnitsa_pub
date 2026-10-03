@@ -4,11 +4,21 @@ from app.services.event_consumer import process_event_message
 from app.core.config import settings
 
 
-@pytest.mark.asyncio
-async def test_process_event_published():
+def _create_mock_session(existing_result=None):
     mock_session = AsyncMock()
+    mock_result = MagicMock()
+    mock_scalars = MagicMock()
+    mock_scalars.first.return_value = existing_result
+    mock_result.scalars.return_value = mock_scalars
+    mock_session.execute.return_value = mock_result
     mock_session.add = MagicMock()
     mock_session.commit = AsyncMock()
+    return mock_session
+
+
+@pytest.mark.asyncio
+async def test_process_event_published():
+    mock_session = _create_mock_session()
 
     payload = {
         "event_id": 42,
@@ -35,9 +45,7 @@ async def test_process_event_published():
 
 @pytest.mark.asyncio
 async def test_process_event_published_skip_when_disabled():
-    mock_session = AsyncMock()
-    mock_session.add = MagicMock()
-    mock_session.commit = AsyncMock()
+    mock_session = _create_mock_session()
 
     payload = {
         "event_id": 43,
@@ -54,9 +62,7 @@ async def test_process_event_published_skip_when_disabled():
 
 @pytest.mark.asyncio
 async def test_process_event_cancelled():
-    mock_session = AsyncMock()
-    mock_session.add = MagicMock()
-    mock_session.commit = AsyncMock()
+    mock_session = _create_mock_session()
 
     payload = {
         "event_id": 42,
@@ -79,9 +85,7 @@ async def test_process_event_cancelled():
 
 @pytest.mark.asyncio
 async def test_process_event_updated():
-    mock_session = AsyncMock()
-    mock_session.add = MagicMock()
-    mock_session.commit = AsyncMock()
+    mock_session = _create_mock_session()
 
     payload = {
         "event_id": 42,
@@ -104,9 +108,7 @@ async def test_process_event_updated():
 
 @pytest.mark.asyncio
 async def test_process_event_with_target_users():
-    mock_session = AsyncMock()
-    mock_session.add = MagicMock()
-    mock_session.commit = AsyncMock()
+    mock_session = _create_mock_session()
 
     payload = {
         "event_id": 99,
@@ -122,3 +124,23 @@ async def test_process_event_with_target_users():
     assert [n.user_id for n in result] == [10, 20, 30]
     assert mock_session.add.call_count == 3
     mock_session.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_process_event_duplicate_ignored():
+    mock_existing_notification = MagicMock()
+    mock_session = _create_mock_session(existing_result=mock_existing_notification)
+
+    payload = {
+        "event_id": 42,
+        "title": "Jazz Night Live",
+        "start_datetime": "2026-10-15T20:00:00",
+        "send_notifications": True,
+        "timestamp": "2026-09-17T22:00:00",
+    }
+
+    result = await process_event_message("event.published", payload, mock_session)
+
+    assert len(result) == 0
+    mock_session.add.assert_not_called()
+    mock_session.commit.assert_not_called()

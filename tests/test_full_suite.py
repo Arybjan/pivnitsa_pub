@@ -307,8 +307,8 @@ async def test_nikita_xml_payload_generation_and_cleaning():
         called_args, called_kwargs = mock_post.call_args
         xml_content = called_kwargs["content"].decode("utf-8")
 
-        assert "<login>test_login</login>" in xml_content
-        assert "<pwd>test_password</pwd>" in xml_content
+        assert f"<login>{settings.NIKITA_LOGIN}</login>" in xml_content
+        assert f"<pwd>{settings.NIKITA_PASSWORD}</pwd>" in xml_content
         assert "<phone>996700998877</phone>" in xml_content
         assert "<text>Hello &lt;&amp;&gt; Test</text>" in xml_content
         assert "<test>1</test>" in xml_content
