@@ -17,6 +17,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   logoutBtn.addEventListener('click', () => {
     localStorage.clear();
-    window.location.href = '../login-form/index.html';
+    window.location.href = '../login-form/';
   });
 });
