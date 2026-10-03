@@ -18,6 +18,7 @@ def booking_payload(booking: Booking, **extra) -> dict:
     return {
         "booking_id": booking.id,
         "user_id": booking.user_id,
+        "phone": booking.phone,
         "event_id": booking.event_id,
         "table_id": booking.table_id,
         "guests": booking.guests,

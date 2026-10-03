@@ -25,6 +25,8 @@ def get_token_payload(
             token,
             JWT_SECRET,
             algorithms=[JWT_ALGORITHM],
+            # Срок действия проверяется всегда, а токен без exp не принимаем вовсе.
+            options={"require_exp": True},
         )
 
         user_id = payload.get("sub")

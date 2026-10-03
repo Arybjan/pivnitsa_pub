@@ -17,8 +17,9 @@ class BookingResponse(BaseModel):
     table_id: int
     event_id: int
     guests: int
+    phone: str | None
     status: BookingStatus
-    expires_at: datetime | None
+    expires_at: datetime
     created_at: datetime
     updated_at: datetime
 

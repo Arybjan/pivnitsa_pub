@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_user, require_admin
+from app.core.security import get_current_user, get_token_payload, require_admin
 from app.database import get_db
 from app.schemas.booking import BookingCreate, BookingResponse
 from app.services.booking_service import BookingService
@@ -21,13 +21,14 @@ router = APIRouter(
 def create_booking(
     data: BookingCreate,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user),
+    token: dict = Depends(get_token_payload),
 ):
     service = BookingService(db)
 
     try:
         return service.create_booking(
-            user_id=user_id,
+            user_id=int(token["sub"]),
+            phone=token.get("phone"),
             data=data,
         )
 
@@ -38,7 +39,7 @@ def create_booking(
         )
 
 @router.get(
-    "/user/me",
+    "/my",
     response_model=list[BookingResponse],
 )
 def get_my_bookings(
@@ -78,7 +79,7 @@ def get_booking(
     return booking
 
 
-@router.patch(
+@router.post(
     "/{booking_id}/confirm",
     response_model=BookingResponse,
 )
@@ -107,7 +108,7 @@ def confirm_booking(
     return booking
 
 
-@router.patch(
+@router.post(
     "/{booking_id}/cancel",
     response_model=BookingResponse,
 )

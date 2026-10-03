@@ -17,10 +17,17 @@ class BookingRepository:
 
         return booking
 
-    def get_by_id(self, booking_id: int) -> Booking | None:
+    def get_by_id(
+        self,
+        booking_id: int,
+        for_update: bool = False,
+    ) -> Booking | None:
         stmt = select(Booking).where(
             Booking.id == booking_id
         )
+
+        if for_update:
+            stmt = stmt.with_for_update()
 
         return self.db.scalar(stmt)
 
@@ -37,16 +44,18 @@ class BookingRepository:
         stmt = select(Booking).where(
             Booking.event_id == event_id,
             Booking.status.in_(
-                [BookingStatus.PENDING, BookingStatus.CONFIRMED]
+                [BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED]
             ),
-        )
+        ).with_for_update()
 
         return list(self.db.scalars(stmt).all())
 
     def get_expired_pending(self) -> list[Booking]:
+        # skip_locked: бронь, которую прямо сейчас подтверждает оплата,
+        # пропускаем — её статус решит та транзакция.
         stmt = select(Booking).where(
-            Booking.status == "PENDING",
+            Booking.status == BookingStatus.PENDING_PAYMENT,
             Booking.expires_at <= datetime.now(timezone.utc),
-        )
+        ).with_for_update(skip_locked=True)
 
         return list(self.db.scalars(stmt).all())
