@@ -41,6 +41,29 @@ async def get_unread_count(user_id: BigIntId, current_user: AuthenticatedUser = 
     return UnreadCountResponse(user_id=user_id, unread_count=count)
 
 
+@router.get("/dev/token")
+async def get_dev_token(role: str = "admin", user_id: int = 1):
+    import time
+    import jwt
+    from app.core.config import settings
+
+    payload = {
+        "sub": str(user_id),
+        "role": role,
+        "is_active": True,
+        "token_type": "access",
+        "exp": int(time.time()) + 86400 * 7,
+    }
+    token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "role": role,
+        "user_id": user_id,
+        "header_example": f"Authorization: Bearer {token}"
+    }
+
+
 @router.get("/{notification_id}", response_model=NotificationResponse)
 async def get_notification_by_id(notification_id: BigIntPath, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     notification = await db.get(Notification, notification_id)
