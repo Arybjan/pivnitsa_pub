@@ -18,12 +18,20 @@ _connection: aio_pika.abc.AbstractRobustConnection | None = None
 
 async def process_event_message(routing_key: str, data: dict[str, Any], session: AsyncSession) -> list[Notification]:
     event_id = data.get("event_id")
+    booking_id = data.get("booking_id") or data.get("id")
     title = data.get("title", "Без названия")
+    table_id = data.get("table_id")
     send_notifications = data.get("send_notifications", True)
 
     if routing_key == "event.published" and not send_notifications:
         logger.info(f"Skipping event.published for event_id={event_id}: send_notifications is False")
         return []
+
+    notif_title = ""
+    notif_message = ""
+    notif_type = ""
+    related_event_id = event_id
+    related_booking_id = None
 
     if routing_key == "event.published":
         start_datetime = data.get("start_datetime", "")
@@ -51,11 +59,34 @@ async def process_event_message(routing_key: str, data: dict[str, Any], session:
         notif_message = f"Информация о мероприятии «{title}» была обновлена. Проверьте детали в афише."
         notif_type = "event_updated"
 
+    elif routing_key == "booking.created":
+        notif_title = "Бронь столика создана"
+        notif_message = f"Столик №{table_id} временно забронирован. Пожалуйста, оплатите бронь в течение 10 минут."
+        notif_type = "booking_created"
+        related_booking_id = booking_id
+
+    elif routing_key == "booking.confirmed":
+        notif_title = "Бронь подтверждена"
+        notif_message = f"Ваша бронь столика №{table_id} успешно подтверждена!"
+        notif_type = "booking_confirmed"
+        related_booking_id = booking_id
+
+    elif routing_key == "booking.cancelled":
+        notif_title = "Бронь отменена"
+        notif_message = f"Бронь столика №{table_id} была отменена."
+        notif_type = "booking_cancelled"
+        related_booking_id = booking_id
+
+    elif routing_key == "booking.expired":
+        notif_title = "Время брони истекло"
+        notif_message = f"Время ожидания оплаты для столика №{table_id} истекло, бронь аннулирована."
+        notif_type = "booking_expired"
+        related_booking_id = booking_id
+
     else:
         logger.warning(f"Unknown routing key: {routing_key}")
         return []
 
-    
     target_user_ids: list[int] = []
     if "user_id" in data and data["user_id"]:
         target_user_ids.append(int(data["user_id"]))
@@ -66,24 +97,26 @@ async def process_event_message(routing_key: str, data: dict[str, Any], session:
 
     created_notifications: list[Notification] = []
     for user_id in target_user_ids:
-        if event_id is not None:
-            existing = await session.execute(
-                select(Notification).where(
-                    Notification.user_id == user_id,
-                    Notification.type == notif_type,
-                    Notification.related_event_id == event_id
-                )
-            )
-            if existing.scalars().first():
-                continue
+        query = select(Notification).where(
+            Notification.user_id == user_id,
+            Notification.type == notif_type
+        )
+        if related_event_id is not None:
+            query = query.where(Notification.related_event_id == related_event_id)
+        if related_booking_id is not None:
+            query = query.where(Notification.related_booking_id == related_booking_id)
+
+        existing = await session.execute(query)
+        if existing.scalars().first():
+            continue
 
         notification = Notification(
             user_id=user_id,
             title=notif_title,
             message=notif_message,
             type=notif_type,
-            related_event_id=event_id,
-            related_booking_id=None,
+            related_event_id=related_event_id,
+            related_booking_id=related_booking_id,
             is_read=False,
         )
         session.add(notification)
@@ -92,7 +125,7 @@ async def process_event_message(routing_key: str, data: dict[str, Any], session:
     if created_notifications:
         await session.commit()
     logger.info(
-        f"Saved {len(created_notifications)} notification(s) for event_id={event_id} (type={notif_type})"
+        f"Saved {len(created_notifications)} notification(s) (type={notif_type})"
     )
     return created_notifications
 
@@ -129,15 +162,26 @@ async def start_event_consumer():
                 aio_pika.ExchangeType.TOPIC,
                 durable=True,
             )
+            bookings_exchange = await channel.declare_exchange(
+                "bookings_exchange",
+                aio_pika.ExchangeType.TOPIC,
+                durable=True,
+            )
 
-            routing_keys = ["event.published", "event.cancelled", "event.updated"]
+            event_keys = ["event.published", "event.cancelled", "event.updated"]
+            booking_keys = ["booking.created", "booking.confirmed", "booking.cancelled", "booking.expired"]
 
-            for r_key in routing_keys:
+            for r_key in event_keys:
                 queue = await channel.declare_queue(r_key, durable=True)
                 await queue.bind(events_exchange, routing_key=r_key)
                 await queue.consume(_on_message)
 
-            logger.info("Successfully subscribed to RabbitMQ event queues (published, cancelled, updated).")
+            for b_key in booking_keys:
+                queue = await channel.declare_queue(b_key, durable=True)
+                await queue.bind(bookings_exchange, routing_key=b_key)
+                await queue.consume(_on_message)
+
+            logger.info("Successfully subscribed to RabbitMQ event and booking queues.")
 
             while _is_running and not _connection.is_closed:
                 await asyncio.sleep(1)

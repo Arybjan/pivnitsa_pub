@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Path, status
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, func
 
 from app.core.database import get_db
+from app.core.security import AuthenticatedUser, get_current_user, require_service_or_admin
 from app.models.notification import Notification
 from app.schemas.notification import BigIntId, BigIntPath, NotificationCreate, NotificationResponse, UnreadCountResponse, SendSMSRequest, SendSMSResponse
 from app.services.sms_service import send_sms_via_nikita
@@ -10,18 +11,18 @@ from app.services.sms_service import send_sms_via_nikita
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
-# Создание уведомления
 @router.post("/", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)
-async def create_notification(data: NotificationCreate, db: AsyncSession = Depends(get_db)):
+async def create_notification(data: NotificationCreate, auth: AuthenticatedUser = Depends(require_service_or_admin), db: AsyncSession = Depends(get_db)):
     notification = Notification(**data.model_dump())
     db.add(notification)
     await db.commit()
     return notification
 
 
-# Получение списка уведомлений пользователя
 @router.get("/", response_model=list[NotificationResponse])
-async def get_user_notifications(user_id: BigIntId, unread_only: bool = False, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db)):
+async def get_user_notifications(user_id: BigIntId, current_user: AuthenticatedUser = Depends(get_current_user), unread_only: bool = False, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db)):
+    if not current_user.is_admin_or_service and user_id != current_user.user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     query = select(Notification).where(Notification.user_id == user_id)
     if unread_only:
         query = query.where(Notification.is_read == False)
@@ -30,57 +31,61 @@ async def get_user_notifications(user_id: BigIntId, unread_only: bool = False, l
     return result.scalars().all()
 
 
-# Получение количества непрочитанных уведомлений
 @router.get("/unread-count", response_model=UnreadCountResponse)
-async def get_unread_count(user_id: BigIntId, db: AsyncSession = Depends(get_db)):
+async def get_unread_count(user_id: BigIntId, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if not current_user.is_admin_or_service and user_id != current_user.user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     query = select(func.count(Notification.id)).where(Notification.user_id == user_id, Notification.is_read == False)
     result = await db.execute(query)
     count = result.scalar() or 0
     return UnreadCountResponse(user_id=user_id, unread_count=count)
 
 
-# Получение уведомления по ID
 @router.get("/{notification_id}", response_model=NotificationResponse)
-async def get_notification_by_id(notification_id: BigIntPath, db: AsyncSession = Depends(get_db)):
+async def get_notification_by_id(notification_id: BigIntPath, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     notification = await db.get(Notification, notification_id)
     if not notification:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    if not current_user.is_admin_or_service and notification.user_id != current_user.user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     return notification
 
 
-# Отметка уведомления как прочитанного
 @router.patch("/{notification_id}/read")
-async def mark_as_read(notification_id: BigIntPath, db: AsyncSession = Depends(get_db)):
-    stmt = update(Notification).where(Notification.id == notification_id).values(is_read=True)
-    result = await db.execute(stmt)
-    await db.commit()
-    if result.rowcount == 0:
+async def mark_as_read(notification_id: BigIntPath, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    notification = await db.get(Notification, notification_id)
+    if not notification:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    if not current_user.is_admin_or_service and notification.user_id != current_user.user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    notification.is_read = True
+    await db.commit()
     return {"status": "ok", "message": "Notification marked as read"}
 
 
-# Отметка всех уведомлений пользователя как прочитанных
 @router.patch("/read-all")
-async def mark_all_as_read(user_id: BigIntId, db: AsyncSession = Depends(get_db)):
+async def mark_all_as_read(user_id: BigIntId, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if not current_user.is_admin_or_service and user_id != current_user.user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     stmt = update(Notification).where(Notification.user_id == user_id, Notification.is_read == False).values(is_read=True)
     result = await db.execute(stmt)
     await db.commit()
     return {"status": "ok", "user_id": user_id, "updated_count": result.rowcount}
 
 
-# Удаление уведомления по ID
 @router.delete("/{notification_id}")
-async def delete_notification(notification_id: BigIntPath, db: AsyncSession = Depends(get_db)):
+async def delete_notification(notification_id: BigIntPath, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     notification = await db.get(Notification, notification_id)
     if not notification:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    if not current_user.is_admin_or_service and notification.user_id != current_user.user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     await db.delete(notification)
     await db.commit()
     return {"status": "ok", "message": "Notification deleted"}
 
 
-# Отправка SMS-сообщения
 @router.post("/sms", response_model=SendSMSResponse)
-async def send_sms(data: SendSMSRequest, bg_tasks: BackgroundTasks):
+async def send_sms(data: SendSMSRequest, bg_tasks: BackgroundTasks, auth: AuthenticatedUser = Depends(require_service_or_admin)):
     bg_tasks.add_task(send_sms_via_nikita, data.phone_number, data.message)
     return SendSMSResponse(status="success", message=f"SMS queued for {data.phone_number}")
