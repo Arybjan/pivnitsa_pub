@@ -46,3 +46,19 @@ class SendSMSRequest(SafeBaseModel):
 class SendSMSResponse(BaseModel):
     status: str
     message: str
+
+
+class NotificationSettingsUpdate(SafeBaseModel):
+    events_enabled: bool | None = None
+    booking_enabled: bool | None = None
+    sms_enabled: bool | None = None
+
+
+class NotificationSettingsResponse(BaseModel):
+    user_id: int
+    events_enabled: bool
+    booking_enabled: bool
+    sms_enabled: bool
+    updated_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)

@@ -1,11 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, func, or_
+from sqlalchemy import select, update, func, or_, and_
 
 from app.core.database import get_db
 from app.core.security import AuthenticatedUser, get_current_user, require_service_or_admin
-from app.models.notification import Notification
-from app.schemas.notification import BigIntId, BigIntPath, NotificationCreate, NotificationResponse, UnreadCountResponse, SendSMSRequest, SendSMSResponse
+from app.models.notification import Notification, NotificationSettings
+from app.schemas.notification import (
+    BigIntId, BigIntPath, NotificationCreate, NotificationResponse,
+    UnreadCountResponse, SendSMSRequest, SendSMSResponse,
+    NotificationSettingsUpdate, NotificationSettingsResponse
+)
 from app.services.sms_service import send_sms_via_nikita
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
@@ -23,7 +27,23 @@ async def create_notification(data: NotificationCreate, auth: AuthenticatedUser 
 async def get_user_notifications(user_id: BigIntId, current_user: AuthenticatedUser = Depends(get_current_user), unread_only: bool = False, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db)):
     if not current_user.is_admin_or_service and user_id != current_user.user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    query = select(Notification).where(or_(Notification.user_id == user_id, Notification.user_id.is_(None)))
+    
+    settings = await db.get(NotificationSettings, user_id)
+    events_enabled = settings.events_enabled if settings else True
+    booking_enabled = settings.booking_enabled if settings else True
+
+    conditions = []
+    if events_enabled:
+        conditions.append(Notification.user_id.is_(None))
+    
+    user_filters = [Notification.user_id == user_id]
+    if not events_enabled:
+        user_filters.append(~Notification.type.startswith("event"))
+    if not booking_enabled:
+        user_filters.append(~Notification.type.startswith("booking"))
+    
+    conditions.append(and_(*user_filters))
+    query = select(Notification).where(or_(*conditions))
     if unread_only:
         query = query.where(Notification.is_read == False)
     query = query.order_by(Notification.created_at.desc()).limit(limit).offset(offset)
@@ -35,10 +55,62 @@ async def get_user_notifications(user_id: BigIntId, current_user: AuthenticatedU
 async def get_unread_count(user_id: BigIntId, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not current_user.is_admin_or_service and user_id != current_user.user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    query = select(func.count(Notification.id)).where(or_(Notification.user_id == user_id, Notification.user_id.is_(None)), Notification.is_read == False)
+    
+    settings = await db.get(NotificationSettings, user_id)
+    events_enabled = settings.events_enabled if settings else True
+    booking_enabled = settings.booking_enabled if settings else True
+
+    conditions = []
+    if events_enabled:
+        conditions.append(Notification.user_id.is_(None))
+    
+    user_filters = [Notification.user_id == user_id]
+    if not events_enabled:
+        user_filters.append(~Notification.type.startswith("event"))
+    if not booking_enabled:
+        user_filters.append(~Notification.type.startswith("booking"))
+    
+    conditions.append(and_(*user_filters))
+    query = select(func.count(Notification.id)).where(or_(*conditions), Notification.is_read == False)
     result = await db.execute(query)
     count = result.scalar() or 0
     return UnreadCountResponse(user_id=user_id, unread_count=count)
+
+
+@router.get("/settings", response_model=NotificationSettingsResponse)
+async def get_notification_settings(user_id: BigIntId | None = None, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    target_user_id = user_id if (user_id and current_user.is_admin_or_service) else current_user.user_id
+    settings = await db.get(NotificationSettings, target_user_id)
+    if not settings:
+        settings = NotificationSettings(user_id=target_user_id, events_enabled=True, booking_enabled=True, sms_enabled=True)
+        db.add(settings)
+        await db.commit()
+        await db.refresh(settings)
+    return settings
+
+
+@router.patch("/settings", response_model=NotificationSettingsResponse)
+async def update_notification_settings(data: NotificationSettingsUpdate, user_id: BigIntId | None = None, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    target_user_id = user_id if (user_id and current_user.is_admin_or_service) else current_user.user_id
+    settings = await db.get(NotificationSettings, target_user_id)
+    if not settings:
+        settings = NotificationSettings(
+            user_id=target_user_id,
+            events_enabled=True if data.events_enabled is None else data.events_enabled,
+            booking_enabled=True if data.booking_enabled is None else data.booking_enabled,
+            sms_enabled=True if data.sms_enabled is None else data.sms_enabled
+        )
+        db.add(settings)
+    else:
+        if data.events_enabled is not None:
+            settings.events_enabled = data.events_enabled
+        if data.booking_enabled is not None:
+            settings.booking_enabled = data.booking_enabled
+        if data.sms_enabled is not None:
+            settings.sms_enabled = data.sms_enabled
+    await db.commit()
+    await db.refresh(settings)
+    return settings
 
 
 @router.get("/dev/token")

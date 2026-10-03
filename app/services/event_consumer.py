@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import async_session_maker
 from app.core.templates import render_notification, render_sms
-from app.models.notification import Notification
+from app.models.notification import Notification, NotificationSettings
 from app.services.sms_service import send_sms_via_nikita
 
 logger = logging.getLogger(__name__)
@@ -92,6 +92,16 @@ async def process_event_message(routing_key: str, data: dict[str, Any], session:
 
     created_notifications: list[Notification] = []
     for user_id in target_user_ids:
+        if user_id is not None:
+            user_settings = await session.get(NotificationSettings, user_id)
+            if user_settings:
+                if notif_type.startswith("event") and not user_settings.events_enabled:
+                    logger.info(f"Skipping event notification for user_id={user_id}: events_enabled is False")
+                    continue
+                if notif_type.startswith("booking") and not user_settings.booking_enabled:
+                    logger.info(f"Skipping booking notification for user_id={user_id}: booking_enabled is False")
+                    continue
+
         query = select(Notification).where(
             Notification.type == notif_type
         )
@@ -129,14 +139,19 @@ async def process_event_message(routing_key: str, data: dict[str, Any], session:
 
     phone = data.get("phone") or data.get("phone_number")
     if phone:
-        sms_text = render_sms(
-            notif_type,
-            title=title,
-            date=formatted_date,
-            table_number=table_id,
-        )
-        if sms_text:
-            asyncio.create_task(send_sms_via_nikita(str(phone), sms_text))
+        user_id_for_sms = target_user_ids[0] if (target_user_ids and target_user_ids[0] is not None) else None
+        user_settings = await session.get(NotificationSettings, user_id_for_sms) if user_id_for_sms else None
+        if user_settings and not user_settings.sms_enabled:
+            logger.info(f"Skipping SMS for user_id={user_id_for_sms}: sms_enabled is False")
+        else:
+            sms_text = render_sms(
+                notif_type,
+                title=title,
+                date=formatted_date,
+                table_number=table_id,
+            )
+            if sms_text:
+                asyncio.create_task(send_sms_via_nikita(str(phone), sms_text))
 
     return created_notifications
 
