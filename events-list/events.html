@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Управление мероприятиями: Бар Пивница</title>
+  <link rel="stylesheet" href="../normalize/normalize.css">
+  <link rel="stylesheet" href="events.css">
+</head>
+<body>
+  
+  <header class="header">
+    <div class="header-left">
+      <a href="../main-menu/main.html" class="btn-back">&larr; На главную</a>
+      <h2>🎉 Афиша и мероприятия</h2>
+    </div>
+
+    <button id="openCreateModalBtn" class="btn btn-primary">+ Создать мероприятие</button>
+  </header>
+
+
+
+  <main class="events-container">
+
+    <div class="events-filter-bar">
+      <div class="filter-tabs">
+        <button class="filter-btn active" data-status="all">Все (<span id="countAll">0</span>)</button>
+        <button class="filter-btn" data-status="published">Опубликованные (<span id="countPublished">0</span>)</button>
+        <button class="filter-btn" data-status="draft">Черновики (<span id="countDraft">0</span>)</button>
+        <button class="filter-btn" data-status="cancelled">Снятые (<span id="countCancelled">0</span>)</button>
+      </div>
+    </div>
+
+    <div class="events-grid" id="eventsGrid"></div>
+  </main>
+
+
+  <div id="eventModal" class="modal-backdrop hidden">
+
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalTitle">Создать мероприятие</h3>
+        <button id="closeModalBtn" class="btn-close">&times;</button>
+      </div>
+
+      <form id="eventForm" class="modal-form">
+        <input type="hidden" id="eventId">
+
+        <div class="form-group">
+          <label for="eventTitle">Название вечеринки *</label>
+          <input type="text" id="eventTitle" placeholder="например: Summer Fest" required>
+        </div>
+
+        <div class="form-group">
+          <label for="eventPosterUrl">Ссылка на афишу (URL картинки) *</label>
+          <input type="url" id="eventPosterUrl" placeholder="https://ibb.co/..." required>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="eventStartTime">Начало *</label>
+            <input type="datetime-local" id="eventStartTime" required>
+          </div>
+          <div class="form-group">
+            <label for="eventEndTime">Завершение</label>
+            <input type="datetime-local" id="eventEndTime">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="eventDescription">Описание мероприятия</label>
+          <textarea id="eventDescription" rows="4" placeholder="Подробное описание программы, DJ-сеты, условия входа..."></textarea>
+        </div>
+
+
+        <div class="modal-actions">
+          <button type="button" id="saveDraftBtn" class="btn btn-secondary">Сохранить как черновик</button>
+          <button type="submit" id="publishBtn" class="btn btn-primary">Сохранить и опубликовать</button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <script src="events.js"></script>
+</body>
+</html>

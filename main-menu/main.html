@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/normalize/normalize.css">
+  <link rel="stylesheet" href="main.css">
+  <title>Главная: Бар Пивница</title>
+</head>
+<body>
+
+  <header class="hub-header">
+    <div class="logo">
+      <span class="logo-icon">🍺</span>
+      <h2>Бар Пивница</h2>
+    </div>
+
+    <div class="user-info">
+      <span class="user-role-badge" id="userRoleBadge">Загрузка...</span>
+      <button id="logoutBtn" class="btn-logout">Выйти</button>
+    </div>
+  </header>
+
+  
+  <main class="hub-container">
+    <div class="cards-grid" id="cardsGrid">
+
+      <a href="../hall-dashboard/dashboard.html" class="menu-card">
+        <div class="card-icon">🗺️</div>
+        <div class="card-body">
+          <h3>Управление залом</h3>
+          <p>Интерактивная схема зала, бронирование и список гостей</p>
+        </div>
+
+        <div class="card-footer">
+          <span>Перейти</span>
+          <span class="arrow">&rarr;</span>
+        </div>
+      </a>
+
+
+      <a href="../events-list/events.html" class="menu-card">
+        <div class="card-icon">🎉</div>
+        <div class="card-body">
+          <h3>Мероприятия и афиша</h3>
+          <p>Управление анонсами, выступлениями и вечеринками</p>
+        </div>
+
+        <div class="card-footer">
+          <span>Перейти</span>
+          <span class="arrow">&rarr;</span>
+        </div>
+      </a>
+
+
+      <a href="../owner-reports/reports.html" class="menu-card owner-only" id="reportsCard">
+        <div class="card-icon">📊</div>
+        <div class="card-body">
+          <div class="card-header-badge">Владелец</div>
+          <h3>Отчеты и выручка</h3>
+          <p>Финансовая аналитика, загрузка зала, доход с броней и выручка</p>
+        </div>
+
+        <div class="card-footer">
+          <span>Перейти</span>
+          <span class="arrow">&rarr;</span>
+        </div>
+      </a>
+
+    </div>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>

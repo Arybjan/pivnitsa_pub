@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/normalize/normalize.css">
+  <link rel="stylesheet" href="index.css">
+  <title>Вход в админ-панель: Бар Пивница</title>
+</head>
+<body>
+
+  <main class="login-container">
+    <div class="login-card">
+      
+      <div class="card-header">
+        <h1>Вход в админ-панель</h1>
+        <p class="subtitle">Бар Пивница</p>
+      </div>
+
+      <!-- novalidate - отключает стандартную валидацию браузера ради JS -->
+      <form id="loginForm" class="login-form" novalidate>
+
+        <!-- Ввод телефона -->
+        <div class="form-group">
+          <label for="phoneInput">Номер телефона</label>
+          <div class="input-wrapper">
+            <span class="country-code">+996</span>
+            <input type="text"
+            inputmode="numeric"
+            id="phoneInput"
+            placeholder="555 123 456"
+            maxlength="9"
+            autocomplete="tel-national"
+            required>
+          </div>
+
+          <!-- Сообщение об ошибке -->
+          <span class="error-message" id="phoneError"></span>
+          <button type="button" id="changePhoneBtn" class="btn-link hidden">Изменить номер</button>
+        </div>
+
+        <!-- Запрос кода -->
+        <button type="button" id="requestCodeBtn" class="btn btn-primary">Запросить код</button>
+
+        <!-- Ввод кода (скрыт по умолчанию) -->
+        <div id="smsStep" class="sms-step hidden">
+          <div class="form-group">
+            <label for="smsInput">SMS-код</label>
+            <input type="text"
+            id="smsInput"
+            placeholder="Введите 4-хзначный код"
+            maxlength="4"
+            autocomplete="one-time-code">
+
+            <span class="error-message" id="smsError"></span>
+          </div>
+
+          <!-- Таймер повторной отправки -->
+          <div class="timer-text" id="timerContainer">
+            Повторный код будет доступен через: <span id="timer">60</span> секунд
+          </div>
+
+          <button type="button" id="resendBtn" class="btn-link hidden">Отправить код снова</button>
+
+          <!-- Кнопка отправки формы -->
+          <button type="submit" id="submitBtn" class="btn btn-primary">Войти</button>
+        </div>
+
+      </form>
+
+    </div>
+  </main>
+
+  <script src="index.js"></script>
+</body>
+</html>

@@ -1,0 +1,553 @@
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+
+
+/* Режимы отображения вкладок */
+.top-panel {
+  display: flex;
+  flex-direction: column;
+
+  padding: 16px 24px;
+  gap: 12px;
+
+  background-color: var(--card-bg);
+
+  border-bottom: 1px solid var(--border-color);
+}
+
+.top-navigation {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  width: 100%;
+
+  position: relative;
+}
+
+.header-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  
+  width: 100%;
+
+  gap: 16px;
+  padding-top: 8px;
+
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.view-toggle {
+  display: flex;
+  
+  background-color: var(--bg-color);
+
+  padding: 4px;
+
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.btn-toggle {
+  padding: 8px 16px;
+
+  background: none;
+  color: var(--text-muted);
+  
+  border: none;
+  border-radius: 6px;
+  
+  font-weight: 600;
+  font-size: 0.85rem;
+  
+  cursor: pointer;
+  transition: all 0.2 ease;
+
+  &.active {
+    background-color: var(--card-bg);
+    color: var(--text-main);
+
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+
+  &:hover:not(.active) {
+    color: var(--text-main);
+  }
+}
+
+.btn-back {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+
+  color: var(--text-muted);
+
+  font-size: 0.9rem;
+
+  text-decoration: none;
+
+  transition: color 0.2s;
+
+  &:hover {
+    color: var(--accent);
+  }
+}
+
+
+
+/* Выбор этажа */
+.floor-selector {
+  display: flex;
+}
+
+.btn-floor {
+  padding: 8px 16px;
+  margin-right: 8px;
+
+  background: none;
+
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+
+  color: var(--text-muted);
+
+  cursor: pointer;
+
+  &.active {
+    background-color: var(--accent);
+    color: #000;
+
+    font-weight: 600;
+
+    border-color: var(--accent);
+  }
+}
+
+
+
+/* Статусы столиков на схеме */
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  font-size: 0.85rem;
+
+  background-color: var(--bg-color);
+
+  padding: 6px 16px;
+
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  color: var(--text-muted);
+
+  & > strong {
+    color: var(--text-main);
+  }
+}
+
+.stat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+
+  &.free {
+    background-color: var(--success);
+  }
+
+  &.booked {
+    background-color: var(--danger);
+  }
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+
+
+/* Список бронирований */
+.reservations-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  
+  padding: 20px;
+  gap: 16px;
+}
+
+.reservations-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  
+  background-color: var(--card-bg);
+
+  padding: 16px;
+
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  
+  gap: 10px;
+
+  & > input[type="date"] {
+    width: auto;
+  }
+}
+
+.toolbar-actions {
+  display: flex;
+
+  gap: 8px;
+}
+
+.table-wrapper {
+  background-color: var(--card-bg);
+
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+
+  overflow: hidden;
+}
+
+.data-table {
+  width: 100%;
+
+  text-align: left;
+  font-size: 0.9rem;
+
+  border-collapse: collapse;
+
+  & th, & td {
+    padding: 12px 16px;
+
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  & th {
+    color: var(--text-muted);
+
+    font-weight: 600;
+  }
+
+  & tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+  }
+}
+
+
+
+/* Новое бронирование */
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+
+  width: 100vw;
+  height: 100vh;
+
+  background-color: rgba(0, 0, 0, 0.7);
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  
+  backdrop-filter: blur(4px);
+}
+
+.modal-window {
+  background-color: var(--card-bg);
+
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+
+  width: 100%;
+  max-width: 480px;
+
+  padding: 24px;
+
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+
+  border-bottom: 1px solid var(--border-color);
+
+  & > h3 {
+    font-size: 1.2rem;
+
+    color: var(--text-main);
+  }
+}
+
+.btn-close {
+  background: none;
+  color: var(--text-muted);
+
+  border: none;
+
+  font-size: 1.5rem;
+
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text-main);
+  }
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+
+  & > .form-group {
+    flex: 1;
+  }
+}
+
+#capacityWarning {
+  color: var(--warning);
+  
+  font-size: 0.85rem;
+
+  margin-bottom: 12px;
+  margin-top: -8px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+
+  margin-top: 24px;
+  padding-top: 16px;
+
+  border-top: 1px solid var(--border-color);
+}
+
+
+
+/* Статусы оплаты */
+.badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+
+  padding: 4px 8px;
+
+  border-radius: 4px;
+}
+
+.badge-success {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.badge-warning {
+  background-color: rgba(245, 158, 11, 0.2);
+  color: var(--warning);
+}
+
+.badge-danger {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: var(--danger);
+}
+
+
+
+/* Печать */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .toolbar-actions {
+    display: none;
+  }
+
+  .reservations-container,
+  .reservations-container * {
+    visibility: visible;
+  }
+
+  .reservations-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+
+    width: 100%;
+
+    color: #000;
+  }
+
+  .data-table th,
+  .data-table td {
+    border-color: #000;
+    color: #000;
+  }
+
+  .data-table th:last-child,
+  .data-table td:last-child,
+  .btn-cancel, 
+  button {
+    display: none !important;
+  }
+
+  input[type="date"] {
+    border: none !important;
+    background: transparent !important;
+    color: #000 !important;
+    font-size: 1.1rem;
+    padding: 0 !important;
+
+    &::-webkit-calendar-picker-indicator {
+      display: none !important;
+    }
+  }
+}
+
+
+
+/* Схема зала - Canvas */
+.editor-container {
+  display: flex;
+  flex: 1;
+  gap: 20px;
+
+  padding: 20px;
+}
+
+.canvas-wrapper {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  background-color: var(--input-bg);
+
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+
+  overflow: hidden;
+}
+
+/* Рамка вокруг Canvas (от самого Fabric) */
+.canvas-container {
+  background-color: var(--bg-color);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 20px 20px;
+
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+
+
+/* Схема зала - Свойства столиков */
+.sidebar {
+  width: 300px;
+
+  background-color: var(--input-bg);
+
+  padding: 20px;
+
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+
+  & > h2 {
+    font-size: 1.1rem;
+
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+
+    border-bottom: 1px solid var(--border-color);
+  }
+}
+
+.info-text {
+  color: var(--text-muted);
+  
+  font-size: 0.9rem;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+label {
+  display: block;
+
+  font-size: 0.85rem;
+
+  color: var(--text-muted);
+
+  margin-bottom: 4px;
+}
+
+input, select {
+  width: 100%;
+
+  padding: 8px 12px;
+
+  background-color: var(--bg-color);
+  color: var(--text-main);
+
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+
+
+/* Общие и прочие кнопки */
+.btn {
+  padding: 10px 16px;
+
+  border: none;
+  border-radius: 6px;
+
+  font-weight: 600;
+
+  cursor: pointer;
+}
+
+.btn-primary {
+  background-color: var(--accent);
+  color: #000;
+}
+
+.btn-secondary {
+  background-color: var(--input-bg);
+  color: #fff;
+}
+
+.btn-danger {
+  background-color: var(--danger);
+  color: #fff;
+
+  width: 100%;
+}

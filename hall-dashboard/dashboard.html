@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="../normalize/normalize.css">
+  <link rel="stylesheet" href="dashboard.css">
+  <title>Управление залом: Бар Пивница</title>
+
+  <!-- FabricJS для геометрического canvas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+</head>
+<body>
+  
+  <!-- Верхняя панель управления -->
+  <header class="top-panel">
+    
+    <!-- Режим отображения разделов -->
+    <div class="top-navigation">
+      <a href="../main-menu/main.html" class="btn-back">&larr; На главную</a>
+      
+      <div class="view-toggle">
+        <button id="viewCanvasBtn" class="btn-toggle active">Схема зала</button>
+        <button id="viewReservationsBtn" class="btn-toggle">Список броней</button>
+      </div>
+    </div>
+
+
+    <div id="canvasHeaderControls" class="header-controls">
+
+      <div class="floor-selector">
+        <button id="floor1Btn" class="btn-floor active">1 этаж</button>
+        <button id="floor2Btn" class="btn-floor">2 этаж</button>
+      </div>
+
+      <!-- Статистика статусов столиков -->
+      <div class="stats-bar">
+        <div class="stat-item">
+          <span class="stat-dot free"></span>
+          Свободно: <strong id="statFreeCount">0</strong>
+        </div>
+        <div class="stat-item">
+          <span class="stat-dot booked"></span>
+          Занято: <strong id="statBookedCount">0</strong>
+        </div>
+        <div class="stat-item">
+          Всего : <strong id="statTotalSeats">0</strong>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="addTableBtn" class="btn btn-secondary">+ Добавить стол</button>
+        <button id="saveLayoutBtn" class="btn btn-primary">Сохранить схему</button>
+      </div>
+
+    </div>
+  </header>
+
+
+
+  <!-- Схема зала -->
+  <main id="canvasView" class="editor-container">
+
+    <div class="canvas-wrapper">
+      <canvas id="hallCanvas" width="900" height="600"></canvas>
+    </div>
+
+    <!-- Боковая панель параметров столика -->
+    <aside class="sidebar">
+      <h2>Свойства стола</h2>
+
+      <div id="noSelectionText" class="info-text">
+        Кликните на стол, чтобы изменить его параметры.
+      </div>
+
+      <form id="tablePropsForm" class="hidden">
+
+        <div class="form-group">
+          <label>Номер стола</label>
+          <input type="text" id="propNumber">
+        </div>
+
+        <div class="form-group">
+          <label>Вместимость (чел)</label>
+          <input type="number" id="propCapacity" min="1" max="30">
+        </div>
+
+        <div class="form-group">
+          <label>Статус</label>
+          <select id="propStatus">
+            <option value="free">Свободен</option>
+            <option value="booked">Забронирован</option>
+            <option value="occupied">Занят</option>
+            <option value="disabled">Недоступен</option>
+          </select>
+        </div>
+
+        <button type="button" id="deleteTableBtn" class="btn btn-danger">Удалить стол</button>
+
+      </form>
+    </aside>
+
+  </main>
+
+
+  
+  <!-- Список бронирований -->
+  <section id="reservationsSection" class="reservations-container hidden">
+
+      <div class="reservations-toolbar">
+        <div class="filter-group">
+          <label for="reservationDateFilter">Дата:</label>
+          <input type="date" id="reservationDateFilter">
+        </div>
+
+        <div class="toolbar-actions">
+          <button id="openReservationModalBtn" class="btn btn-primary">+ Новая бронь</button>
+
+          <button id="printReservationsBtn" class="btn btn-secondary">🖨️ Распечатать</button>
+          <button id="exportReservationsBtn" class="btn btn-secondary">📥 Выгрузить</button>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Время</th>
+              <th>Стол (этаж)</th>
+              <th>Гость</th>
+              <th>Гостей</th>
+              <th>Сумма</th>
+              <th>Предоплата</th>
+              <th>Оплата</th>
+              <th>Статус</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody id="reservationsTableBody"></tbody>
+        </table>
+      </div>
+
+    </section>
+
+
+
+    <!-- Новая бронь -->
+    <div id="reservationModal" class="modal-backdrop hidden">
+      <div class="modal-window">
+
+        <div class="modal-header">
+          <h3 id="modalTitle">Новое бронирование</h3>
+          <button type="button" id="closeModalBtn" class="btn-close">&times;</button>
+        </div>
+
+        <form id="createReservationForm">
+          <!-- Создаем ли новую бронь или редактируем существующую -->
+          <input type="hidden" id="modalReservationId" value="">
+
+          <div class="form-group">
+            <label for="modalFloorSelect">Этаж</label>
+            <select id="modalFloorSelect" required>
+              <option value="1">1 этаж</option>
+              <option value="2">2 этаж</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="modalTableSelect">Столик</label>
+            <select id="modalTableSelect" required></select>
+          </div>
+
+          <div class="form-group">
+            <label for="modalDate">Дата</label>
+            <input type="date" id="modalDate" required>
+          </div>
+
+          <div class="form-group">
+            <label for="modalTime">Время</label>
+            <input type="time" id="modalTime" required value="19:00">
+          </div>
+
+          <div class="form-group">
+            <label for="modalGuestName">Имя гостя</label>
+            <input type="text" id="modalGuestName" placeholder="Например: Алексей" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="modalGuestPhone">Телефон</label>
+            <input type="tel" id="modalGuestPhone" placeholder="+996 555 123456" required>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="modalGuestsCount">Гостей</label>
+              <input type="number" id="modalGuestsCount" min="1" value="2" required>
+            </div>
+
+            <div class="form-group">
+              <label for="modalTotalAmount">Сумма (сом)</label>
+              <input type="number" id="modalTotalAmount" min="0" placeholder="0">
+            </div>
+
+            <div class="form-group">
+              <label for="modalPrepayment">Предоплата</label>
+              <input type="number" id="modalPrepayment" min="0" value="0">
+            </div>
+          </div>
+
+          <div id="capacityWarning" class="hidden">
+            ⚠️ Количество гостей превышает вместимость столика. Убедитесь, что столики будут сдвинуты.
+          </div>
+
+          <div class="form-group">
+            <label for="modalPaymentStatus">Статус оплаты</label>
+            <select id="modalPaymentStatus">
+              <option value="unpaid">При входе</option>
+              <option value="paid">Оплачено</option>
+            </select>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" id="cancelModalBtn" class="btn btn-secondary">Отмена</button>
+            <button type="submit" class="btn btn-primary">Забронировать</button>
+          </div>
+
+        </form>
+      </div>
+    </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

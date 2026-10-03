@@ -1,0 +1,180 @@
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+
+.login-container {
+  width: 100%;
+  max-width: 400px;
+
+  padding: 20px;
+}
+
+.login-card {
+  background-color: var(--card-bg);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+
+  padding: 32px;
+
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.card-header {
+  text-align: center;
+
+  margin-bottom: 24px;
+
+  & h1 {
+    font-size: 1.25rem;
+    font-weight: 600;
+
+    margin-bottom: 6px;
+  }
+}
+
+.subtitle {
+  color: var(--text-muted);
+
+  font-size: 0.875rem;
+  letter-spacing: 1px;
+
+  text-transform: uppercase;
+}
+
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  
+  margin-bottom: 16px;
+}
+
+label {
+  color: var(--text-muted);
+
+  font-size: 0.875rem;
+
+  margin-bottom: 6px;
+}
+
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  
+  background-color: var(--input-bg);
+
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+
+  overflow: hidden;
+
+  &:focus-within, input:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+}
+
+.country-code {
+  background-color: var(--card-bg);
+  color: var(--text-muted);
+
+  font-size: 0.9rem;
+
+  padding: 10px 12px;
+
+  border-right: 1px solid var(--border-color);
+}
+
+
+input {
+  width: 100%;
+  font-size: 1rem;
+
+  padding: 10px 12px;
+
+  background-color: var(--input-bg);
+  color: var(--text-main);
+
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.input-wrapper input {
+  border: none;
+}
+
+
+.input-error {
+  border-color: var(--danger) !important;
+}
+
+.error-message {
+  color: var(--danger);
+
+  font-size: 0.75rem;
+
+  margin-top: 4px;
+
+  min-height: 16px;
+}
+
+
+.btn {
+  width: 100%;
+
+  margin-top: 8px;;
+  padding: 12px;
+
+  border: none;
+  border-radius: 6px;
+
+  font-weight: 600;
+
+  cursor: pointer;
+
+  transition: background-color 0.2s ease;
+}
+
+.btn-primary {
+  background-color: var(--accent);
+  color: #000;
+
+  &:hover {
+    background-color: var(--accent-hover);
+  }
+}
+
+.btn-link {
+  background: none;
+  color: var(--accent);
+
+  border: none;
+
+  font-size: 0.85rem;
+
+  margin-top: 8px;
+
+  width: 100%;
+
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+#changePhoneBtn {  
+  margin-top: -12px;
+  margin-bottom: 10px;
+}
+
+
+.timer-text {
+  font-size: 0.8rem;
+
+  color: var(--text-muted);
+
+  text-align: center;
+
+  margin-top: 8px;
+}

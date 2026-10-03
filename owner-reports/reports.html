@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Отчеты и выручка: Бар Пивница</title>
+  <link rel="stylesheet" href="../normalize/normalize.css">
+  <link rel="stylesheet" href="reports.css">
+
+  <!-- SheetJS для генерации excel -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  
+  <header class="header">
+    <div class="header-left">
+      <a href="../main-menu/main.html" class="btn-back">&larr; На главную</a>
+      <h2>📊 Отчет по броням и выручке</h2>
+    </div>
+
+    <span class="role-badge">Только для владельца</span>
+  </header>
+
+
+
+  <main class="reports-container">
+
+    <section class="filter-card">
+      <div class="filter-group">
+        <label for="startDate">С даты:</label>
+        <input type="date" id="startDate">
+      </div>
+
+      <div class="filter-group">
+        <label for="endDate">По дату:</label>
+        <input type="date" id="endDate">
+      </div>
+
+      <button id="applyFilterBtn" class="btn btn-primary">Сформировать</button>
+      <button id="exportExcelBtn" class="btn btn-success">📥 Выгрузить в Excel</button>
+    </section>
+
+
+    <!-- ключевые показатели -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <span class="kpi-title">Всего броней</span>
+        <span class="kpi-value" id="kpiTotalBookings">0</span>
+      </div>
+
+      <div class="kpi-card">
+        <span class="kpi-title">Сумма предоплат</span>
+        <span class="kpi-value text-success" id="kpiTotalPrepayment">0</span>
+      </div>
+
+      <div class="kpi-card">
+        <span class="kpi-title">Общая сумма чеков</span>
+        <span class="kpi-value text-accent" id="kpiTotalAmount">0</span>
+      </div>
+
+      <div class="kpi-card">
+        <span class="kpi-title">Отменено броней</span>
+        <span class="kpi-value text-danger" id="kpiCanceledBookings">0</span>
+      </div>
+    </section>
+
+
+    <section class="table-card">
+      <h3>Детализация бронирований за период</h3>
+
+      <div class="table-wrapper">
+        <table class="data-table" id="reportsTable">
+
+          <thead>
+            <tr>
+              <th>Дата</th>
+              <th>Время</th>
+              <th>Столик</th>
+              <th>Гость</th>
+              <th>Гостей</th>
+              <th>Сумма</th>
+              <th>Предоплата</th>
+              <th>Статус</th>
+            </tr>
+          </thead>
+
+          <tbody id="reportsTableBody"></tbody>
+
+        </table>
+      </div>
+
+    </section>
+
+  </main>
+
+  <script src="reports.js"></script>
+</body>
+</html>
