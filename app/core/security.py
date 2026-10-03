@@ -11,9 +11,12 @@ JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 
 
-def get_current_user(
+ADMIN_ROLES = ("admin", "owner")
+
+
+def get_token_payload(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> int:
+) -> dict:
 
     token = credentials.credentials
 
@@ -32,10 +35,32 @@ def get_current_user(
                 detail="Invalid token",
             )
 
-        return int(user_id)
+        int(user_id)
+
+        return payload
 
     except (JWTError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
         )
+
+
+def get_current_user(
+    payload: dict = Depends(get_token_payload),
+) -> int:
+
+    return int(payload["sub"])
+
+
+def require_admin(
+    payload: dict = Depends(get_token_payload),
+) -> int:
+
+    if payload.get("role") not in ADMIN_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required",
+        )
+
+    return int(payload["sub"])

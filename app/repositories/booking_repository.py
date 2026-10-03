@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.booking import Booking
+from app.models.booking import Booking, BookingStatus
 
 
 class BookingRepository:
@@ -29,6 +29,16 @@ class BookingRepository:
             select(Booking)
             .where(Booking.user_id == user_id)
             .order_by(Booking.created_at.desc())
+        )
+
+        return list(self.db.scalars(stmt).all())
+
+    def get_active_by_event_id(self, event_id: int) -> list[Booking]:
+        stmt = select(Booking).where(
+            Booking.event_id == event_id,
+            Booking.status.in_(
+                [BookingStatus.PENDING, BookingStatus.CONFIRMED]
+            ),
         )
 
         return list(self.db.scalars(stmt).all())

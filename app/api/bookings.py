@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_admin
 from app.database import get_db
 from app.schemas.booking import BookingCreate, BookingResponse
 from app.services.booking_service import BookingService
@@ -73,6 +73,35 @@ def get_booking(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this booking",
+        )
+
+    return booking
+
+
+@router.patch(
+    "/{booking_id}/confirm",
+    response_model=BookingResponse,
+)
+def confirm_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    admin_id: int = Depends(require_admin),
+):
+    service = BookingService(db)
+
+    try:
+        booking = service.confirm_booking(booking_id)
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+
+    if booking is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking not found",
         )
 
     return booking
