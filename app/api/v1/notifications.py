@@ -114,7 +114,7 @@ async def update_notification_settings(data: NotificationSettingsUpdate, user_id
 
 
 @router.get("/dev/token")
-async def get_dev_token(role: str = "admin", user_id: int = 1):
+async def get_dev_token(role: str = "admin", user_id: int = 1, phone: str = "+996555123456"):
     import time
     import jwt
     from app.core.config import settings
@@ -122,6 +122,7 @@ async def get_dev_token(role: str = "admin", user_id: int = 1):
     payload = {
         "sub": str(user_id),
         "role": role,
+        "phone": phone,
         "is_active": True,
         "token_type": "access",
         "exp": int(time.time()) + 86400 * 7,
