@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  payment-service:
+    build: .
+    container_name: payment-service
+    ports:
+      - "8004:8004"
+    environment:
+      - PORT=8004
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@payment-postgres:5432/payment_db
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_EXCHANGE=events_exchange
+      - PAYMENT_GATEWAY_ENV=sandbox
+    depends_on:
+      - payment-postgres
+    networks:
+      - nightclub-network
+
+  payment-postgres:
+    image: postgres:15-alpine
+    container_name: payment-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=payment_db
+    ports:
+      - "5436:5432"
+    volumes:
+      - payment_postgres_data:/var/lib/postgresql/data
+    networks:
+      - nightclub-network
+
+volumes:
+  payment_postgres_data:
+
+networks:
+  nightclub-network:
+    external: true
