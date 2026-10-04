@@ -3,11 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.api.v1.router import router
 from app.api.v1.endpoints import health
-from app.core.database import engine, Base
+from app.core.database import engine
 from app.core.redis import redis_client
 from app.services.publisher import EventPublisher
 from loguru import logger
 import sys
+import asyncio
+from contextlib import suppress
+from app.services.outbox import run_outbox
 
 # Настройка логов
 logger.remove()
@@ -22,10 +25,6 @@ async def lifespan(app: FastAPI):
     """Управление жизненным циклом приложения"""
     # Запуск
     logger.info("Starting Event Service...")
-
-    # Создаем таблицы (в проде использовать миграции)
-    # async with engine.begin() as conn:
-    #     await conn.run_sync(Base.metadata.create_all)
 
     # Проверка подключения к Redis
     try:
@@ -42,12 +41,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"RabbitMQ connection failed: {e}")
 
-    yield  # Приложение запущено
-
-    # Остановка
-    logger.info("Shutting down Event Service...")
-    await redis_client.close()
-    await engine.dispose()
+    outbox_task = asyncio.create_task(run_outbox(publisher))
+    try:
+        yield
+    finally:
+        outbox_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await outbox_task
+        logger.info("Shutting down Event Service...")
+        try:
+            await publisher.close()
+        finally:
+            await redis_client.aclose()
+            await engine.dispose()
 
 # Создаем приложение
 app = FastAPI(

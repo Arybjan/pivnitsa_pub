@@ -1,7 +1,5 @@
-from posix import environ
-
-from pydantic_settings import BaseSettings
-from typing import Optional
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     service_name: str = "event-service"
@@ -19,7 +17,7 @@ class Settings(BaseSettings):
     rabbitmq_url: str
 
     #JWT
-    jwt_secret: str
+    jwt_secret: str = Field(validation_alias=AliasChoices("JWT_SECRET", "JWT_SECRET_KEY", "jwt_secret"))
     jwt_algorithm: str = 'HS256'
     #Extermal Services
     auth_service_url: str
@@ -27,8 +25,6 @@ class Settings(BaseSettings):
     #Cache TTL (seconds)
     event_cache_ttl: int = 300 #5 minutes
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
 settings = Settings()

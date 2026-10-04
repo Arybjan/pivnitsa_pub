@@ -4,10 +4,10 @@ from typing import Optional, List
 from app.core.database import get_db
 from app.schemas.event import (
     EventCreate, EventUpdate, EventOut,
-    EventListResponse, EventPublishRequest
+    EventListResponse, EventPublishRequest, EventStatus
 )
 from app.services.event_services import EventService
-from app.api.dependencies.auth import get_current_user, CurrentUser
+from app.api.dependencies.auth import get_current_user, get_optional_user, CurrentUser
 from app.utils.exceptions import NotFoundError, PermissionDeniedError
 from loguru import logger
 
@@ -29,9 +29,32 @@ async def get_published_events(
     result = await service.get_published_events(limit, offset)
     return EventListResponse(**result)
 
+# === Admin: Get All Events ===
+
+@router.get("/all", response_model=EventListResponse)
+async def get_all_events(
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    status: Optional[EventStatus] = Query(None, description="Фильтр по статусу"),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Получить ВСЕ мероприятия (включая черновики).
+    Только для администраторов.
+    """
+    if current_user.role not in ["admin", "owner"]:
+        raise PermissionDeniedError("Only admins can view all events")
+
+    service = EventService(db)
+    result = await service.get_all_events(limit, offset, status)
+    return EventListResponse(**result)
+
+
 @router.get("/{event_id}", response_model=EventOut)
 async def get_event_by_id(
     event_id: int,
+    current_user: Optional[CurrentUser] = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -47,11 +70,10 @@ async def get_event_by_id(
             detail="Event not found"
         )
 
-    # Если мероприятие не опубликовано, проверяем права
-    if event.status != "published":
-        # Здесь должна быть проверка на админа через токен
-        # Пока пропускаем для упрощения
-        pass
+    if event.status != EventStatus.PUBLISHED and (
+        current_user is None or current_user.role not in ["admin", "owner"]
+    ):
+        raise NotFoundError("Event not found")
 
     return event
 
@@ -75,7 +97,8 @@ async def create_event(
     event = await service.create_event(event_data, current_user.id)
     return event
 
-@router.put("/{event_id}", response_model=EventOut)
+@router.patch("/{event_id}", response_model=EventOut)
+@router.put("/{event_id}", response_model=EventOut, deprecated=True)
 async def update_event(
     event_id: int,
     event_data: EventUpdate,
@@ -100,7 +123,7 @@ async def update_event(
 @router.post("/{event_id}/publish", response_model=EventOut)
 async def publish_event(
     event_id: int,
-    request: EventPublishRequest,
+    request: EventPublishRequest = EventPublishRequest(),
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -113,7 +136,7 @@ async def publish_event(
         raise PermissionDeniedError("Only admins can publish events")
 
     service = EventService(db)
-    event = await service.publish_event(event_id, request.send_notifications)
+    event = await service.publish_event(event_id, request.send_notifications, request.recipient_ids)
 
     if not event:
         raise NotFoundError(f"Event {event_id} not found")
@@ -162,23 +185,17 @@ async def delete_event(
 
     return None
 
-# === Admin: Get All Events ===
 
-@router.get("/all", response_model=EventListResponse)
-async def get_all_events(
-    limit: int = Query(10, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    status: Optional[str] = Query(None, description="Фильтр по статусу"),
+
+@router.post("/{event_id}/unpublish", response_model=EventOut)
+async def unpublish_event(
+    event_id: int,
     current_user: CurrentUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    """
-    Получить ВСЕ мероприятия (включая черновики).
-    Только для администраторов.
-    """
     if current_user.role not in ["admin", "owner"]:
-        raise PermissionDeniedError("Only admins can view all events")
-
-    service = EventService(db)
-    result = await service.get_all_events(limit, offset, status)
-    return EventListResponse(**result)
+        raise PermissionDeniedError("Only admins can unpublish events")
+    event = await EventService(db).unpublish_event(event_id)
+    if event is None:
+        raise NotFoundError(f"Event {event_id} not found")
+    return event

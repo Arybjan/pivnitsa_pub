@@ -1,4 +1,6 @@
 from fastapi import APIRouter, status
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from app.core.database import engine
 from app.core.redis import redis_client
 import asyncio
@@ -29,7 +31,7 @@ async def readiness_check():
     # Проверка БД
     try:
         async with engine.connect() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         checks["database"] = True
     except Exception as e:
         checks["database"] = False
@@ -44,4 +46,4 @@ async def readiness_check():
     if all(checks.values()):
         return {"status": "ready", "checks": checks}
     else:
-        return {"status": "not ready", "checks": checks}
+        return JSONResponse(status_code=503, content={"status": "not ready", "checks": checks})

@@ -1,54 +1,56 @@
+from uuid import UUID
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from app.core.config import settings
-from loguru import logger
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
+
 
 class CurrentUser(BaseModel):
-    id: int
-    phone_number: str
+    id: UUID
+    phone_number: str | None = None
     role: str
     is_active: bool
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> CurrentUser:
-    """
-    Расшифровывает JWT-токен и возвращает данные пользователя.
-    """
-    token = credentials.credentials
 
+def decode_user(credentials: HTTPAuthorizationCredentials) -> CurrentUser:
     try:
         payload = jwt.decode(
-            token,
-            settings.jwt_secret,
-            algorithms=[settings.jwt_algorithm]
+            credentials.credentials, settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
+            options={"require_exp": True, "require_sub": True},
         )
-
-        user_id = payload.get("sub")
-        phone_number = payload.get("phone")
-        role = payload.get("role", "guest")
-        is_active = payload.get("is_active", True)
-
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: missing user ID"
-            )
-
+        token_type = payload.get("type", payload.get("token_type"))
+        if token_type != "access" or any(
+            payload[key] != "access" for key in ("type", "token_type") if key in payload
+        ):
+            raise ValueError("Access token required")
+        if payload.get("is_active") is not True:
+            raise HTTPException(status_code=403, detail="Inactive user")
         return CurrentUser(
-            id=int(user_id),
-            phone_number=phone_number,
-            role=role,
-            is_active=is_active
+            id=payload["sub"], phone_number=payload.get("phone"),
+            role=payload.get("role", "guest"), is_active=True,
         )
-
-    except JWTError as e:
-        logger.warning(f"Invalid JWT: {e}")
+    except (JWTError, ValueError, ValidationError, TypeError, KeyError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token"
+            detail="Invalid authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+async def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> CurrentUser | None:
+    return decode_user(credentials) if credentials else None
+
+
+async def get_current_user(
+    user: CurrentUser | None = Depends(get_optional_user),
+) -> CurrentUser:
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required", headers={"WWW-Authenticate": "Bearer"})
+    return user

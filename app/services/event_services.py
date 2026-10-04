@@ -1,17 +1,16 @@
 from typing import Optional
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.events import Event, EventStatus
 from app.repositories.event_repository import EventRepository
 from app.schemas.event import EventCreate, EventUpdate
-from app.services.publisher import EventPublisher
 
 
 class EventService:
     def __init__(self, db: AsyncSession):
         self.repository = EventRepository(db)
-        self.publisher = EventPublisher()
 
     @staticmethod
     def _page(events: list[Event], total: int, limit: int, offset: int) -> dict:
@@ -37,7 +36,7 @@ class EventService:
     async def get_event_by_id(self, event_id: int) -> Optional[Event]:
         return await self.repository.get_by_id(event_id)
 
-    async def create_event(self, event_data: EventCreate, created_by: int) -> Event:
+    async def create_event(self, event_data: EventCreate, created_by: UUID) -> Event:
         return await self.repository.create(event_data, created_by)
 
     async def update_event(
@@ -46,20 +45,16 @@ class EventService:
         return await self.repository.update(event_id, event_data)
 
     async def publish_event(
-        self, event_id: int, send_notifications: bool = True
+        self, event_id: int, send_notifications: bool = True,
+        recipient_ids: list[UUID] | None = None,
     ) -> Optional[Event]:
-        event = await self.repository.update_status(event_id, EventStatus.PUBLISHED)
-        if event:
-            await self.publisher.publish_event_published(
-                event.id, event.title, event.start_datetime, send_notifications
-            )
-        return event
+        return await self.repository.update_status(event_id, EventStatus.PUBLISHED, send_notifications, recipient_ids)
+
+    async def unpublish_event(self, event_id: int) -> Optional[Event]:
+        return await self.repository.update_status(event_id, EventStatus.DRAFT)
 
     async def cancel_event(self, event_id: int) -> Optional[Event]:
-        event = await self.repository.update_status(event_id, EventStatus.CANCELLED)
-        if event:
-            await self.publisher.publish_event_cancelled(event.id, event.title)
-        return event
+        return await self.repository.update_status(event_id, EventStatus.CANCELLED)
 
     async def delete_event(self, event_id: int) -> bool:
         return await self.repository.delete(event_id)
