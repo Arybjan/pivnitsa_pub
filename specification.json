@@ -8,11 +8,12 @@
     "dbdiagram_url": "https://dbdiagram.io/d/6a6bbc5a067336e1de3000ef"
   },
   "team": [
-    { "id": 1, "developer": "Arman", "service": "Notification Service" },
+    { "id": 1, "developer": "Arman (Loki)", "service": "Notification Service & Payment Service" },
     { "id": 2, "developer": "Atay", "service": "Booking Service" },
     { "id": 3, "developer": "Bayaman", "service": "Venue / Tables Service" },
-    { "id": 4, "developer": "Arybjan", "service": "Auth / Users / Profile & Payment Service" },
-    { "id": 5, "developer": "Daniel", "service": "Events / Catalog Service" }
+    { "id": 4, "developer": "Arybjan", "service": "Auth / Users / Profile Service" },
+    { "id": 5, "developer": "Daniel", "service": "Events / Catalog Service" },
+    { "id": 6, "developer": "Bogdan", "service": "Frontend Admin Panel" }
   ],
   "services": {
     "auth_users_service": {
@@ -129,7 +130,7 @@
     },
     "payment_service": {
       "name": "Payment Service",
-      "developer": "Backend Developer #4 (Arybjan)",
+      "developer": "Backend Developer (Arman / Loki)",
       "responsibilities": [
         "Payment processing",
         "Refunds",
@@ -295,7 +296,7 @@
       { "id": "E3", "name": "Главный экран и афиша", "sp": 19, "lead": "Daniel" },
       { "id": "E4", "name": "Карта зала", "sp": 23, "lead": "Bayaman" },
       { "id": "E5", "name": "Бронирование", "sp": 27, "lead": "Atay" },
-      { "id": "E6", "name": "Онлайн-оплата", "sp": 34, "lead": "Arybjan" },
+      { "id": "E6", "name": "Онлайн-оплата", "sp": 34, "lead": "Arman (Loki)" },
       { "id": "E7", "name": "Уведомления", "sp": 16, "lead": "Arman" },
       { "id": "E8", "name": "Админ-панель и релиз", "sp": 48, "lead": "Bogdan / Team" }
     ],
