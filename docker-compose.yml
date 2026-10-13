@@ -60,9 +60,10 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/auth_db
       REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: dev
-      # Код OTP печатается в лог и возвращается в ответе /otp/send (только dev)
-      SMS_PROVIDER: console
-      OTP_EXPOSE_IN_RESPONSE: "true"
+      # console - код только в лог и в ответ /otp/send (dev);
+      # notification - настоящая SMS через Notification Service -> Nikita SMS
+      SMS_PROVIDER: ${SMS_PROVIDER:-console}
+      OTP_EXPOSE_IN_RESPONSE: ${OTP_EXPOSE_IN_RESPONSE:-true}
       NOTIFICATION_SERVICE_URL: http://notification:8000
       CORS_ORIGINS: '["*"]'
     depends_on:
@@ -141,7 +142,12 @@ services:
       <<: *jwt
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/notifications_db
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
-      NIKITA_TEST_MODE: "true"
+      # Nikita SMS (smspro.nikita.kg); TEST_MODE=true - шлюз принимает, но не отправляет
+      NIKITA_API_URL: ${NIKITA_API_URL:-https://smspro.nikita.kg/api/message}
+      NIKITA_LOGIN: ${NIKITA_LOGIN:-}
+      NIKITA_PASSWORD: ${NIKITA_PASSWORD:-}
+      NIKITA_SENDER: ${NIKITA_SENDER:-}
+      NIKITA_TEST_MODE: ${NIKITA_TEST_MODE:-true}
       VENUE_TIMEZONE: Asia/Bishkek
       VENUE_SERVICE_URL: http://venue:8000
     depends_on:
