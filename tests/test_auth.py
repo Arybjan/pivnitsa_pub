@@ -100,6 +100,14 @@ async def test_resend_cooldown(client):
     assert int(response.headers["Retry-After"]) > 0
 
 
+async def test_retry_after_visible_to_browser(client):
+    origin = {"Origin": "http://localhost:3000"}
+    await client.post("/api/v1/auth/otp/send", json={"phone": PHONE}, headers=origin)
+    response = await client.post("/api/v1/auth/otp/send", json={"phone": PHONE}, headers=origin)
+    assert response.status_code == 429
+    assert "retry-after" in response.headers["Access-Control-Expose-Headers"].lower()
+
+
 async def test_hourly_send_limit(client, redis):
     for i in range(settings.OTP_MAX_SENDS_PER_HOUR):
         await redis.delete(f"auth:otp_cooldown:register:{PHONE}")

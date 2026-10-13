@@ -30,6 +30,8 @@ app.add_middleware(
     allow_origins=settings.CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Фронт показывает, через сколько секунд можно повторить запрос кода
+    expose_headers=["Retry-After"],
 )
 
 
