@@ -1,60 +1,132 @@
-import asyncio
-from typing import AsyncGenerator
+import os
+
+# Настройки читаются при импорте app — окружение задаём до него
+TEST_DB_FILE = "test_payments.db"
+os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB_FILE}"
+os.environ["JWT_SECRET"] = "test-secret"
+os.environ["PAYMENT_GATEWAY_ENV"] = "sandbox"
+os.environ["DEPOSIT_PER_GUEST"] = "1000.00"
+
+import json
+import time
+from datetime import datetime, timedelta, timezone
+
+import httpx
+import jwt
 import pytest
 import pytest_asyncio
+from alembic import command
+from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import delete, select
 
-from app.core.database import Base, get_db
+from app.core.database import async_session_maker
 from app.main import app
-from app.messaging.publisher import publisher
+from app.messaging.workers import relay_outbox_once
+from app.models.payment import OutboxEvent, Payment
+from app.services.booking_client import BookingServiceClient
+from app.services.payment_service import payment_service
 
-import os
-TEST_DB_FILE = "test_payments_concurrency.db"
-TEST_DB_URL = f"sqlite+aiosqlite:///{TEST_DB_FILE}"
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-@pytest_asyncio.fixture
-async def test_engine():
+@pytest.fixture(scope="session", autouse=True)
+def migrated_database():
+    # Схема создаётся миграциями, как в Docker: расхождение модели и миграции уронит тесты
     if os.path.exists(TEST_DB_FILE):
         os.remove(TEST_DB_FILE)
-    engine = create_async_engine(TEST_DB_URL, echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+    command.upgrade(Config("alembic.ini"), "head")
+    yield
     if os.path.exists(TEST_DB_FILE):
         os.remove(TEST_DB_FILE)
 
+
+def make_token(user_id: int, role: str = "guest", exp: bool = True) -> str:
+    claims = {"sub": str(user_id), "role": role, "phone": "+996700111222"}
+    if exp:
+        claims["exp"] = int(time.time()) + 3600
+    return jwt.encode(claims, "test-secret", algorithm="HS256")
+
+
+def auth(user_id: int, role: str = "guest") -> dict:
+    return {"Authorization": f"Bearer {make_token(user_id, role)}"}
+
+
+class FakeBookingService:
+    """Имитирует HTTP API Booking Service: GET /api/v1/bookings/{id}."""
+
+    def __init__(self):
+        self.bookings: dict[int, dict] = {}
+        self.unavailable = False
+
+    def add(self, booking_id: int, user_id: int, guests: int = 2, status: str = "PENDING_PAYMENT", minutes_left: int = 15):
+        self.bookings[booking_id] = {
+            "id": booking_id,
+            "user_id": user_id,
+            "table_id": 1,
+            "event_id": 1,
+            "guests": guests,
+            "phone": "+996700111222",
+            "status": status,
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=minutes_left)).isoformat(),
+        }
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        if self.unavailable:
+            raise httpx.ConnectError("booking-service is down", request=request)
+        token = request.headers["Authorization"].removeprefix("Bearer ")
+        user_id = int(jwt.decode(token, "test-secret", algorithms=["HS256"])["sub"])
+        booking_id = int(request.url.path.rsplit("/", 1)[-1])
+        booking = self.bookings.get(booking_id)
+        if booking is None:
+            return httpx.Response(404, json={"detail": "Booking not found"})
+        if booking["user_id"] != user_id:
+            return httpx.Response(403, json={"detail": "You do not have access to this booking"})
+        return httpx.Response(200, json=booking)
+
+
+class FakePublisher:
+    def __init__(self, connected: bool = True, fail: bool = False):
+        self.is_connected = connected
+        self.fail = fail
+        self.published: list[dict] = []
+
+    async def publish(self, routing_key, payload):
+        if self.fail:
+            raise RuntimeError("broker is down")
+        self.published.append({"routing_key": routing_key, "payload": payload})
+
+
+@pytest.fixture
+def bookings(monkeypatch) -> FakeBookingService:
+    fake = FakeBookingService()
+    client = BookingServiceClient(transport=httpx.MockTransport(fake.handler))
+    monkeypatch.setattr(payment_service, "bookings", client)
+    return fake
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def clean_tables():
+    yield
+    async with async_session_maker() as session:
+        await session.execute(delete(OutboxEvent))
+        await session.execute(delete(Payment))
+        await session.commit()
+
+
 @pytest_asyncio.fixture
-async def client(test_engine) -> AsyncGenerator[AsyncClient, None]:
-    published_events = []
+async def client(bookings):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
 
-    async def mock_publish(routing_key: str, payload: dict):
-        published_events.append({"routing_key": routing_key, "payload": payload})
 
-    publisher.publish = mock_publish
-    publisher.published_events = published_events
+async def outbox_events() -> list[dict]:
+    async with async_session_maker() as session:
+        rows = (await session.execute(select(OutboxEvent).order_by(OutboxEvent.id))).scalars().all()
+        return [
+            {"routing_key": r.routing_key, "payload": json.loads(r.payload), "published": r.published_at is not None}
+            for r in rows
+        ]
 
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False, class_=AsyncSession)
 
-    async def override_get_db():
-        async with session_maker() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        c.published_events = published_events
-        yield c
-
-    app.dependency_overrides.clear()
-
+async def relay(publisher) -> int:
+    async with async_session_maker() as session:
+        return await relay_outbox_once(session, publisher)

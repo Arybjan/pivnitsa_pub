@@ -1,9 +1,12 @@
+import html
+import json
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.core.security import get_current_user_id
+from app.core.security import CurrentUser, get_current_user, get_optional_user, require_admin
+from app.models.payment import Payment, PaymentStatus
 from app.schemas.payment import (
     PaymentConfirmRequest,
     PaymentCreate,
@@ -11,45 +14,44 @@ from app.schemas.payment import (
     RefundRequest,
 )
 from app.services.payment_service import payment_service
+from app.services.stripe_gateway import WebhookVerificationError
 
 router = APIRouter(prefix="/payments", tags=["payments"])
+
+
+def to_response(payment: Payment, user: Optional[CurrentUser]) -> PaymentResponse:
+    response = PaymentResponse.model_validate(payment)
+    # Секрет страницы оплаты отдаём только владельцу, пока платёж не завершён
+    is_owner = user is not None and user.id == payment.user_id
+    if is_owner and payment.status == PaymentStatus.PENDING.value:
+        response.client_secret = payment.client_secret
+        response.checkout_url = f"/api/v1/payments/{payment.id}/checkout?secret={payment.client_secret}"
+    else:
+        response.client_secret = None
+    return response
+
 
 @router.post("", response_model=PaymentResponse, status_code=status.HTTP_201_CREATED)
 async def initiate_payment(
     data: PaymentCreate,
-    user_id: Optional[int] = Depends(get_current_user_id),
-    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    user: CurrentUser = Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key", max_length=255),
     db: AsyncSession = Depends(get_db),
 ):
-    resolved_user_id = data.user_id or user_id or 1
-    return await payment_service.create_payment(
-        db, data, resolved_user_id, idempotency_key=idempotency_key
+    payment = await payment_service.create_payment(
+        db, data.booking_id, user, idempotency_key=idempotency_key
     )
+    return to_response(payment, user)
 
-@router.get("/{payment_id}", response_model=PaymentResponse)
-async def get_payment_status(
-    payment_id: int,
+
+@router.get("/my", response_model=list[PaymentResponse])
+async def list_my_payments(
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await payment_service.get_payment(db, payment_id)
+    payments = await payment_service.list_user_payments(db, user)
+    return [to_response(payment, user) for payment in payments]
 
-@router.post("/{payment_id}/pay", response_model=PaymentResponse)
-async def confirm_payment_checkout(
-    payment_id: int,
-    body: Optional[PaymentConfirmRequest] = None,
-    db: AsyncSession = Depends(get_db),
-):
-    method = body.payment_method_id if body else "pm_card_visa"
-    return await payment_service.confirm_payment(db, payment_id, method)
-
-@router.post("/{payment_id}/refund", response_model=PaymentResponse)
-async def refund_payment(
-    payment_id: int,
-    body: Optional[RefundRequest] = None,
-    db: AsyncSession = Depends(get_db),
-):
-    reason = body.reason if body else "user_cancellation"
-    return await payment_service.refund_payment(db, payment_id, reason)
 
 @router.post("/webhook")
 async def payment_webhook(
@@ -58,18 +60,92 @@ async def payment_webhook(
     db: AsyncSession = Depends(get_db),
 ):
     raw_body = await request.body()
-    result = await payment_service.handle_webhook(db, raw_body, stripe_signature or "")
-    return result
+    try:
+        return await payment_service.handle_webhook(db, raw_body, stripe_signature or "")
+    except WebhookVerificationError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid webhook signature")
+
+
+@router.get("/{payment_id}", response_model=PaymentResponse)
+async def get_payment_status(
+    payment_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    payment = await payment_service.get_payment_for_user(db, payment_id, user)
+    return to_response(payment, user)
+
+
+@router.post("/{payment_id}/pay", response_model=PaymentResponse)
+async def confirm_payment_checkout(
+    payment_id: int,
+    body: Optional[PaymentConfirmRequest] = None,
+    user: Optional[CurrentUser] = Depends(get_optional_user),
+    client_secret: Optional[str] = Header(None, alias="X-Client-Secret"),
+    db: AsyncSession = Depends(get_db),
+):
+    # Оплатить может владелец (по токену) или страница оплаты (по секрету платежа)
+    if client_secret:
+        await payment_service.get_payment_by_secret(db, payment_id, client_secret)
+    elif user is not None:
+        payment = await payment_service.get_payment_for_user(db, payment_id, user)
+        if payment.user_id != user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the payer can confirm the payment")
+    else:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    await db.rollback()
+    method = body.payment_method_id if body else "pm_card_visa"
+    payment = await payment_service.confirm_payment(db, payment_id, method)
+    return to_response(payment, user)
+
+
+@router.post("/{payment_id}/refund", response_model=PaymentResponse)
+async def refund_payment(
+    payment_id: int,
+    body: Optional[RefundRequest] = None,
+    admin: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    reason = (body.reason if body else None) or "admin_refund"
+    payment = await payment_service.refund_payment(db, payment_id, reason)
+    return to_response(payment, admin)
+
+
+def _js_string(value: str) -> str:
+    # JSON-строка, безопасная внутри <script>
+    return json.dumps(value).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
 
 @router.get("/{payment_id}/checkout", response_class=HTMLResponse)
-async def render_checkout_page(payment_id: int, db: AsyncSession = Depends(get_db)):
-    payment = await payment_service.get_payment(db, payment_id)
+async def render_checkout_page(
+    payment_id: int,
+    secret: str = Query(..., min_length=1),
+    db: AsyncSession = Depends(get_db),
+):
+    payment = await payment_service.get_payment_by_secret(db, payment_id, secret)
+    e = html.escape
+    is_pending = payment.status == PaymentStatus.PENDING.value
+    badge = "badge-succeeded" if payment.status == PaymentStatus.SUCCEEDED.value else "badge-pending"
+
+    if is_pending:
+        action_html = '<button class="btn" onclick="submitPayment()">Оплатить тестовой картой Visa</button>'
+    elif payment.status == PaymentStatus.SUCCEEDED.value:
+        action_html = (
+            '<p style="color: #10b981; text-align: center; font-weight: 600;">✓ Оплата успешно завершена!</p>'
+            f'<p style="text-align: center;"><a href="{e(payment.receipt_url or "#")}" style="color: #38bdf8;" '
+            'target="_blank" rel="noopener noreferrer">Посмотреть электронный чек</a></p>'
+        )
+    else:
+        action_html = f'<p style="text-align: center; color: #f87171;">Статус платежа: {e(payment.status)}</p>'
+
     html_content = f"""
     <!DOCTYPE html>
     <html lang="ru">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="referrer" content="no-referrer">
         <title>Оплата бронирования | Pivnitsa Pub</title>
         <style>
             body {{
@@ -126,23 +202,16 @@ async def render_checkout_page(payment_id: int, db: AsyncSession = Depends(get_d
             <p style="color: #94a3b8;">Безопасная оплата бронирования столика (PCI-DSS)</p>
             <hr style="border: 0; border-top: 1px solid #334155; margin: 16px 0;">
             <div class="status-box">
-                <span class="badge {'badge-succeeded' if payment.status == 'SUCCEEDED' else 'badge-pending'}">{payment.status}</span>
+                <span class="badge {badge}">{e(payment.status)}</span>
             </div>
             <div class="detail"><span>Номер брони:</span><strong>#{payment.booking_id}</strong></div>
-            <div class="detail"><span>ID гостя:</span><strong>#{payment.user_id}</strong></div>
-            <div class="detail"><span>Провайдер:</span><strong>{payment.provider}</strong></div>
-            <div class="amount">{payment.amount} {payment.currency}</div>
-            
-            <div id="action-area">
-                {'''
-                <button class="btn" onclick="submitPayment()">Оплатить тестовой картой Visa</button>
-                ''' if payment.status == 'PENDING' else f'''
-                <p style="color: #10b981; text-align: center; font-weight: 600;">✓ Оплата успешно завершена!</p>
-                <p style="text-align: center;"><a href="{payment.receipt_url or '#'}" style="color: #38bdf8;" target="_blank">Посмотреть электронный чек</a></p>
-                '''}
-            </div>
+            <div class="detail"><span>Провайдер:</span><strong>{e(payment.provider)}</strong></div>
+            <div class="amount">{e(str(payment.amount))} {e(payment.currency)}</div>
+            <div id="action-area">{action_html}</div>
         </div>
         <script>
+            const PAYMENT_ID = {payment.id};
+            const CLIENT_SECRET = {_js_string(secret)};
             async function submitPayment() {{
                 const btn = document.querySelector('.btn');
                 if (btn) {{
@@ -150,9 +219,9 @@ async def render_checkout_page(payment_id: int, db: AsyncSession = Depends(get_d
                     btn.innerText = 'Обработка платежа в шлюзе...';
                 }}
                 try {{
-                    const res = await fetch('/api/v1/payments/{payment.id}/pay', {{
+                    const res = await fetch(`/api/v1/payments/${{PAYMENT_ID}}/pay`, {{
                         method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json' }},
+                        headers: {{ 'Content-Type': 'application/json', 'X-Client-Secret': CLIENT_SECRET }},
                         body: JSON.stringify({{ payment_method_id: 'pm_card_visa' }})
                     }});
                     if (res.ok) {{
@@ -170,4 +239,4 @@ async def render_checkout_page(payment_id: int, db: AsyncSession = Depends(get_d
     </body>
     </html>
     """
-    return HTMLResponse(content=html_content)
+    return HTMLResponse(content=html_content, headers={"Cache-Control": "no-store"})

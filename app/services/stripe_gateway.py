@@ -1,3 +1,5 @@
+import asyncio
+import json
 import logging
 import uuid
 from decimal import Decimal
@@ -6,6 +8,10 @@ import stripe
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+class WebhookVerificationError(Exception):
+    pass
+
 
 class StripePaymentGateway:
     def __init__(self):
@@ -39,7 +45,9 @@ class StripePaymentGateway:
             }
 
         try:
-            intent = stripe.PaymentIntent.create(
+            # SDK Stripe синхронный — выносим вызов из event loop
+            intent = await asyncio.to_thread(
+                stripe.PaymentIntent.create,
                 amount=int(amount * 100),
                 currency=currency.lower(),
                 description=description,
@@ -71,7 +79,8 @@ class StripePaymentGateway:
             }
 
         try:
-            intent = stripe.PaymentIntent.confirm(
+            intent = await asyncio.to_thread(
+                stripe.PaymentIntent.confirm,
                 provider_payment_id,
                 payment_method=payment_method_id,
                 return_url="https://pay.pivnitsa.kg/complete",
@@ -109,7 +118,7 @@ class StripePaymentGateway:
             }
             if amount:
                 refund_args["amount"] = int(amount * 100)
-            rf = stripe.Refund.create(**refund_args)
+            rf = await asyncio.to_thread(stripe.Refund.create, **refund_args)
             return {
                 "id": rf.id,
                 "status": rf.status,
@@ -119,12 +128,16 @@ class StripePaymentGateway:
             raise
 
     def verify_webhook(self, payload: bytes, signature_header: str) -> Dict[str, Any]:
-        if self.is_sandbox or "placeholder" in settings.STRIPE_WEBHOOK_SECRET:
-            import json
+        # Без подписи вебхук принимается только в песочнице. В боевом режиме
+        # неподписанный запрос мог бы «оплатить» любую бронь.
+        if self.is_sandbox:
             try:
                 return json.loads(payload.decode("utf-8"))
             except Exception:
                 return {}
+
+        if "placeholder" in settings.STRIPE_WEBHOOK_SECRET:
+            raise WebhookVerificationError("STRIPE_WEBHOOK_SECRET is not configured")
 
         try:
             event = stripe.Webhook.construct_event(
@@ -133,6 +146,6 @@ class StripePaymentGateway:
             return event
         except Exception as e:
             logger.error("Webhook signature verification failed: %s", e)
-            raise
+            raise WebhookVerificationError(str(e)) from e
 
 gateway = StripePaymentGateway()

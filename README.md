@@ -15,95 +15,114 @@
 - Stripe SDK / Адаптер эквайринга
 - RabbitMQ (aio-pika)
 - PyJWT
+- HTTPX (запросы к Booking Service)
 - Pytest (pytest-asyncio)
 
 ## Структура проекта
 
 ```text
 app/
-  api/v1/payments.py          - эндпоинты инициализации, оплаты, вебхуков и чекаута
+  api/v1/payments.py          - эндпоинты оплаты, возвратов, вебхуков и страницы чекаута
   api/v1/router.py            - объединение роутеров API v1
   core/config.py              - чтение настроек из .env
   core/database.py            - асинхронное подключение к PostgreSQL / SQLite
-  core/security.py            - валидация JWT токенов пользователей
-  models/payment.py           - модель таблицы payments со стейт-машиной статусов
+  core/security.py            - проверка JWT (exp обязателен), роли admin/owner
+  models/payment.py           - таблицы payments и outbox_events
   schemas/payment.py          - Pydantic-схемы запросов и ответов
-  services/payment_service.py - бизнес-логика платежей, защита от гонок данных и идемпотентность
+  services/payment_service.py - бизнес-логика платежей, идемпотентность, возвраты
+  services/booking_client.py  - чтение брони из Booking Service (владелец, статус, гости)
   services/stripe_gateway.py  - интеграция с платёжным шлюзом (Stripe / Test Mode)
-  messaging/publisher.py      - публикация события payment.succeeded в events_exchange
+  messaging/connection.py     - подключение к RabbitMQ с повторными попытками
+  messaging/publisher.py      - публикация событий в events_exchange
   messaging/consumer.py       - слушатель booking.payment_rejected и booking.cancelled для авто-возвратов
+  messaging/workers.py        - отправка outbox и повтор неудавшихся возвратов
   main.py                     - инициализация FastAPI, CORS и lifespan
-alembic/                      - миграции базы данных
-tests/                        - автоматические тесты (конкурентность, сквозная сага, вебхуки)
-.env.example                  - шаблон переменных окружения
-requirements.txt              - зависимости
-Dockerfile                    - сборка контейнера
-docker-compose.yml            - запуск сервиса и базы данных
+alembic/                      - миграции базы данных (единственный способ создать схему)
+tests/                        - автотесты на базе, созданной миграциями
 ```
+
+## Как проходит оплата
+
+1. Гость создаёт бронь в Booking Service — статус `PENDING_PAYMENT`, стол держится 15 минут.
+2. `POST /api/v1/payments {"booking_id": ...}` с токеном гостя. Payment Service запрашивает бронь
+   в Booking Service **токеном гостя** и проверяет: бронь его, статус `PENDING_PAYMENT`, время не вышло.
+3. Сумма считается на сервере: `DEPOSIT_PER_GUEST × guests`. Сумму и `user_id` из запроса сервис не принимает.
+4. Гость платит: `POST /api/v1/payments/{id}/pay` с токеном или со страницы чекаута по `client_secret`.
+5. Статус `SUCCEEDED` и событие `payment.succeeded` записываются **в одной транзакции** (outbox).
+   Фоновый воркер отправляет событие в RabbitMQ; если брокер недоступен, событие дождётся отправки.
+6. Booking Service получает `payment.succeeded` и подтверждает бронь (`booking.confirmed`).
+
+Если оплата пришла, а бронь уже сгорела или отменена, Booking Service присылает `booking.payment_rejected`,
+и сервис автоматически делает возврат. Так же возвращаются деньги при `booking.cancelled` с `previous_status: CONFIRMED`.
 
 ## База данных
 
-Таблица `payments` (строго по `specification.json`):
+Таблица `payments` (по `specification.json` + служебные поля):
 - `id`: BigInteger, primary key, autoincrement
-- `booking_id`: BigInteger, foreign key (bookings.id), index, not null
-- `user_id`: BigInteger, foreign key (users.id), index, not null
+- `booking_id`: BigInteger, index, not null
+- `user_id`: BigInteger, index, not null
 - `amount`: Numeric(12, 2), not null
 - `currency`: String(10), default 'KGS', not null
-- `status`: String(30), default 'PENDING' (`PENDING`, `SUCCEEDED`, `FAILED`, `REFUND_PENDING`, `REFUNDED`)
-- `provider`: String(50), default 'STRIPE', not null
-- `idempotency_key`: String(255), unique, index, nullable
-- `provider_payment_id`: String(255), index, nullable
-- `receipt_url`: String(500), nullable
-- `created_at`: DateTime(timezone=True), default now()
-- `updated_at`: DateTime(timezone=True), default now()
+- `status`: String(30) — `PENDING`, `SUCCEEDED`, `FAILED`, `REFUND_PENDING`, `REFUNDED`
+- `provider`: String(50), not null
+- `idempotency_key`: String(255), unique
+- `provider_payment_id`: String(255), index
+- `client_secret`: String(255) — секрет страницы оплаты, выдаётся только владельцу
+- `receipt_url`: String(500)
+- `refund_reason`: String(255)
+- `created_at`, `updated_at`: DateTime(timezone=True)
+
+Уникальный индекс `uq_payments_active_booking`: на одну бронь не больше одного платежа
+в статусах `PENDING` / `SUCCEEDED` / `REFUND_PENDING` — защита от двойной оплаты на уровне БД.
+
+Таблица `outbox_events`: события, ожидающие отправки в RabbitMQ.
 
 ## Эндпоинты
 
-- `POST /api/v1/payments` — Инициализация оплаты брони (поддерживает заголовок `Idempotency-Key`).
-- `GET /api/v1/payments/{id}` — Получение статуса платежа и ссылки на электронный чек.
-- `POST /api/v1/payments/{id}/pay` — Подтверждение оплаты токенизированной картой.
-- `POST /api/v1/payments/{id}/refund` — Инициализация возврата средств.
-- `POST /api/v1/payments/webhook` — Приём вебхуков от платёжного шлюза с крипто-подписью.
-- `GET /api/v1/payments/{id}/checkout` — Интерактивная мобильная веб-страничка чекаута для демонстрации на ревью.
-- `GET /health` — Проверка состояния микросервиса.
+| Метод | Путь | Доступ | Описание |
+|---|---|---|---|
+| POST | `/api/v1/payments` | гость (токен) | Создать платёж по брони. Тело: `{"booking_id"}`. Заголовок `Idempotency-Key` — защита от двойного клика |
+| GET | `/api/v1/payments/my` | гость | Мои платежи и чеки (US-25) |
+| GET | `/api/v1/payments/{id}` | владелец / admin | Статус платежа |
+| POST | `/api/v1/payments/{id}/pay` | владелец или `X-Client-Secret` | Оплата токенизированной картой |
+| POST | `/api/v1/payments/{id}/refund` | admin / owner | Возврат |
+| POST | `/api/v1/payments/webhook` | подпись шлюза | Вебхук. Без подписи принимается только в `sandbox` |
+| GET | `/api/v1/payments/{id}/checkout?secret=...` | по секрету | Страница оплаты для демонстрации |
+| GET | `/health`, `/health/ready` | — | Живость и готовность (БД, RabbitMQ, очередь outbox) |
 
-## Безопасность и архитектурные гарантии
+## События RabbitMQ (`events_exchange`)
 
-1. **PCI-DSS Compliance:** Сервер никогда не принимает и не сохраняет полные номера карт (PAN) или CVV. Оплата токенизируется через шлюз.
-2. **Защита от Double-Spend:** Защита от конкурентной оплаты одного столика несколькими пользователями (отсечение с HTTP 409 Conflict).
-3. **Идемпотентность вебхуков:** Атомарные переходы состояний (`update ... where status='PENDING'`) гарантируют, что повторные вебхуки от банка не создают дубликаты событий в RabbitMQ.
+| Публикует | Ключ | Поля |
+|---|---|---|
+| ✅ | `payment.succeeded` | `payment_id, booking_id, user_id, amount, currency, receipt_url` |
+| ✅ | `payment.failed` | `payment_id, booking_id, user_id, amount, currency, gateway_status` |
+| ✅ | `payment.refunded` | `payment_id, booking_id, user_id, amount, currency, reason` |
+
+| Слушает | Ключ | Действие |
+|---|---|---|
+| ✅ | `booking.payment_rejected` | возврат оплаты |
+| ✅ | `booking.cancelled` с `previous_status: CONFIRMED` | возврат оплаты |
 
 ## Запуск
 
-1. Создать файл `.env` (на основе `.env.example`):
-```env
-PORT=8004
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/payment_db
-RABBITMQ_URL=amqp://guest:guest@localhost:5672/
-RABBITMQ_EXCHANGE=events_exchange
-PAYMENT_GATEWAY_ENV=sandbox
-STRIPE_SECRET_KEY=sk_test_placeholder_for_dev
-```
+1. Создать файл `.env` на основе `.env.example`. `JWT_SECRET` должен совпадать с Auth и Booking Service.
 
-2. Установить зависимости:
+2. Запустить вместе с Booking Service (RabbitMQ берётся из его docker-compose):
+```bash
+docker compose up -d --build
+```
+Миграции применяются при старте контейнера.
+
+3. Локально без Docker:
 ```bash
 pip install -r requirements.txt
-```
-
-3. Применить миграции:
-```bash
 alembic upgrade head
-```
-
-4. Запустить сервис:
-```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
 ```
 
-5. Запустить тесты:
+4. Тесты:
 ```bash
 pytest -v
 ```
 
-Документация Swagger доступна по адресу: `http://127.0.0.1:8004/docs`
-Интерактивный экран оплаты: `http://127.0.0.1:8004/api/v1/payments/{id}/checkout`
+Документация Swagger: `http://127.0.0.1:8004/docs`

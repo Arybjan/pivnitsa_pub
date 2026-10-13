@@ -7,7 +7,7 @@ from alembic import context
 
 from app.core.config import settings
 from app.core.database import Base
-from app.models.payment import Payment
+from app.models.payment import OutboxEvent, Payment  # noqa: F401 — регистрирует таблицы в metadata
 
 config = context.config
 

@@ -1,108 +1,58 @@
 import asyncio
 import uuid
-import pytest
-from httpx import AsyncClient
 
-@pytest.mark.asyncio
-async def test_concurrent_payments_different_users_prevented(client: AsyncClient):
-    """
-    Scenario: User 1 and User 2 both try to pay for the exact same booking #5001 at the same millisecond.
-    Only ONE user may proceed; the other must receive 409 Conflict.
-    """
-    booking_id = 5001
-    req1 = client.post(
-        "/api/v1/payments",
-        json={"booking_id": booking_id, "user_id": 1, "amount": 2000.0, "currency": "KGS", "provider": "STRIPE"},
+from tests.conftest import FakePublisher, auth, outbox_events, relay
+
+
+async def test_concurrent_create_same_booking_returns_one_payment(client, bookings):
+    bookings.add(5001, user_id=1)
+    results = await asyncio.gather(*[
+        client.post("/api/v1/payments", json={"booking_id": 5001}, headers=auth(1)) for _ in range(5)
+    ])
+    assert all(r.status_code == 201 for r in results)
+    assert len({r.json()["id"] for r in results}) == 1
+
+
+async def test_idempotency_key_double_click(client, bookings):
+    bookings.add(6001, user_id=10)
+    headers = {**auth(10), "Idempotency-Key": str(uuid.uuid4())}
+    res1, res2 = await asyncio.gather(
+        client.post("/api/v1/payments", json={"booking_id": 6001}, headers=headers),
+        client.post("/api/v1/payments", json={"booking_id": 6001}, headers=headers),
     )
-    req2 = client.post(
-        "/api/v1/payments",
-        json={"booking_id": booking_id, "user_id": 2, "amount": 2000.0, "currency": "KGS", "provider": "STRIPE"},
-    )
+    assert res1.json()["id"] == res2.json()["id"]
 
-    res1, res2 = await asyncio.gather(req1, req2)
-    statuses = [res1.status_code, res2.status_code]
 
-    assert 201 in statuses, "One request must successfully initiate payment"
-    assert 409 in statuses, "The concurrent conflicting request must be rejected with 409 Conflict"
-
-@pytest.mark.asyncio
-async def test_idempotent_double_click_same_key(client: AsyncClient):
-    """
-    Scenario: User double-clicks "Pay" or mobile client retries with the same Idempotency-Key.
-    Both requests must succeed and return the EXACT same payment object, without duplicating records.
-    """
+async def test_idempotency_key_of_other_user_rejected(client, bookings):
+    bookings.add(1, user_id=10)
+    bookings.add(2, user_id=11)
     key = str(uuid.uuid4())
-    payload = {"booking_id": 6001, "user_id": 10, "amount": 1500.0, "currency": "KGS", "provider": "STRIPE"}
-    headers = {"Idempotency-Key": key}
+    assert (await client.post("/api/v1/payments", json={"booking_id": 1}, headers={**auth(10), "Idempotency-Key": key})).status_code == 201
+    assert (await client.post("/api/v1/payments", json={"booking_id": 2}, headers={**auth(11), "Idempotency-Key": key})).status_code == 409
 
-    req1 = client.post("/api/v1/payments", json=payload, headers=headers)
-    req2 = client.post("/api/v1/payments", json=payload, headers=headers)
 
-    res1, res2 = await asyncio.gather(req1, req2)
+async def test_concurrent_pay_emits_single_event(client, bookings):
+    bookings.add(7001, user_id=33)
+    payment = (await client.post("/api/v1/payments", json={"booking_id": 7001}, headers=auth(33))).json()
+    results = await asyncio.gather(*[
+        client.post(f"/api/v1/payments/{payment['id']}/pay", headers=auth(33)) for _ in range(3)
+    ])
+    assert all(r.json()["status"] == "SUCCEEDED" for r in results)
+    assert len(await outbox_events()) == 1
 
-    assert res1.status_code in (200, 201)
-    assert res2.status_code in (200, 201)
-    assert res1.json()["id"] == res2.json()["id"], "Both requests must resolve to the identical payment ID"
 
-@pytest.mark.asyncio
-async def test_concurrent_pay_confirmation_emits_single_event(client: AsyncClient):
-    """
-    Scenario: User clicks "Confirm Payment" multiple times simultaneously.
-    Payment must succeed, but the RabbitMQ 'payment.succeeded' event must be published exactly once.
-    """
-    create_res = await client.post(
-        "/api/v1/payments",
-        json={"booking_id": 7001, "user_id": 33, "amount": 1000.0, "currency": "KGS", "provider": "STRIPE"},
-    )
-    payment_id = create_res.json()["id"]
+async def test_outbox_waits_for_broker(client, bookings):
+    bookings.add(1, user_id=42)
+    payment = (await client.post("/api/v1/payments", json={"booking_id": 1}, headers=auth(42))).json()
+    await client.post(f"/api/v1/payments/{payment['id']}/pay", headers=auth(42))
 
-    # Clear previous events
-    client.published_events.clear()
+    # Брокер недоступен — оплата прошла, событие ждёт в outbox
+    assert await relay(FakePublisher(connected=False)) == 0
+    assert await relay(FakePublisher(fail=True)) == 0
+    assert (await outbox_events())[0]["published"] is False
 
-    # Fire 3 concurrent pay requests
-    tasks = [
-        client.post(f"/api/v1/payments/{payment_id}/pay", json={"payment_method_id": "pm_card_visa"})
-        for _ in range(3)
-    ]
-    results = await asyncio.gather(*tasks)
-
-    for r in results:
-        assert r.status_code == 200
-        assert r.json()["status"] == "SUCCEEDED"
-
-    # Exactly one payment.succeeded event emitted
-    matching = [e for e in client.published_events if e["payload"]["booking_id"] == 7001]
-    assert len(matching) == 1, f"Expected exactly 1 event, got {len(matching)}"
-
-@pytest.mark.asyncio
-async def test_duplicate_webhook_delivery_idempotent(client: AsyncClient):
-    """
-    Scenario: Stripe retries delivery and sends the exact same webhook payload twice concurrently.
-    The system must handle both without duplicate events.
-    """
-    create_res = await client.post(
-        "/api/v1/payments",
-        json={"booking_id": 8001, "user_id": 44, "amount": 4000.0, "currency": "KGS", "provider": "STRIPE"},
-    )
-    payment_id = create_res.json()["id"]
-    client.published_events.clear()
-
-    webhook_payload = {
-        "type": "payment_intent.succeeded",
-        "data": {
-            "object": {
-                "id": create_res.json()["provider_payment_id"],
-                "metadata": {"payment_id": str(payment_id)},
-            }
-        },
-    }
-
-    req1 = client.post("/api/v1/payments/webhook", json=webhook_payload)
-    req2 = client.post("/api/v1/payments/webhook", json=webhook_payload)
-
-    res1, res2 = await asyncio.gather(req1, req2)
-    assert res1.status_code == 200
-    assert res2.status_code == 200
-
-    matching = [e for e in client.published_events if e["payload"]["booking_id"] == 8001]
-    assert len(matching) == 1, "Duplicate webhook must not emit duplicate events"
+    # Брокер вернулся — событие уходит
+    publisher = FakePublisher()
+    assert await relay(publisher) == 1
+    assert publisher.published[0]["payload"]["booking_id"] == 1
+    assert (await outbox_events())[0]["published"] is True

@@ -4,12 +4,11 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.payment import PaymentStatus
 
+
 class PaymentCreate(BaseModel):
-    booking_id: int = Field(..., description="Target booking identifier")
-    user_id: Optional[int] = Field(None, description="User identifier (auto-resolved from token if omitted)")
-    amount: Decimal = Field(..., gt=0, description="Payment amount")
-    currency: str = Field("KGS", description="Currency code (e.g. KGS, USD, EUR)")
-    provider: str = Field("STRIPE", description="Payment provider (STRIPE, CARD, MBANK)")
+    # Только бронь: пользователь берётся из токена, сумма — из брони на сервере
+    booking_id: int = Field(..., gt=0, description="Target booking identifier")
+
 
 class PaymentResponse(BaseModel):
     id: int
@@ -21,6 +20,8 @@ class PaymentResponse(BaseModel):
     provider: str
     provider_payment_id: Optional[str] = None
     receipt_url: Optional[str] = None
+    refund_reason: Optional[str] = None
+    # Заполняются только для владельца платежа
     client_secret: Optional[str] = None
     checkout_url: Optional[str] = None
     created_at: datetime
@@ -28,8 +29,10 @@ class PaymentResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class RefundRequest(BaseModel):
-    reason: Optional[str] = Field("user_cancellation", description="Reason for the refund")
+    reason: Optional[str] = Field("admin_refund", max_length=255, description="Reason for the refund")
+
 
 class PaymentConfirmRequest(BaseModel):
     payment_method_id: Optional[str] = Field("pm_card_visa", description="Test or tokenized payment method (PCI-DSS compliant)")
