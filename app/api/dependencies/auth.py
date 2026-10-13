@@ -1,4 +1,3 @@
-from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -10,7 +9,7 @@ security = HTTPBearer(auto_error=False)
 
 
 class CurrentUser(BaseModel):
-    id: UUID
+    id: int
     phone_number: str | None = None
     role: str
     is_active: bool

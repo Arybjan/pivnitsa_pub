@@ -10,7 +10,6 @@ os.environ.update(
 )
 
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
 
 import pytest
 import pytest_asyncio
@@ -23,7 +22,7 @@ from app.core.config import settings
 from app.core.database import Base, get_db
 from app.main import app
 
-USER_ID = UUID("6be6b360-313a-4f67-bafd-9dd1bdbd7c31")
+USER_ID = 1
 
 
 @pytest.fixture

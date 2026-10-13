@@ -1,5 +1,4 @@
 from typing import Optional
-from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,7 +35,7 @@ class EventService:
     async def get_event_by_id(self, event_id: int) -> Optional[Event]:
         return await self.repository.get_by_id(event_id)
 
-    async def create_event(self, event_data: EventCreate, created_by: UUID) -> Event:
+    async def create_event(self, event_data: EventCreate, created_by: int) -> Event:
         return await self.repository.create(event_data, created_by)
 
     async def update_event(
@@ -46,7 +45,7 @@ class EventService:
 
     async def publish_event(
         self, event_id: int, send_notifications: bool = True,
-        recipient_ids: list[UUID] | None = None,
+        recipient_ids: list[int] | None = None,
     ) -> Optional[Event]:
         return await self.repository.update_status(event_id, EventStatus.PUBLISHED, send_notifications, recipient_ids)
 

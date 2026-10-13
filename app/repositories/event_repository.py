@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from uuid import UUID, uuid4
+from uuid import uuid4
 from datetime import datetime, timezone
 from fastapi import HTTPException
 from typing import Optional, List, Tuple
@@ -11,7 +11,7 @@ class EventRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create(self, event_data: EventCreate, created_by: UUID) -> Event:
+    async def create(self, event_data: EventCreate, created_by: int) -> Event:
         """Create a new Event"""
 
         event = Event(
@@ -124,7 +124,7 @@ class EventRepository:
 
     async def update_status(
         self, event_id: int, status: EventStatus, send_notifications: bool = True,
-        recipient_ids: list[UUID] | None = None,
+        recipient_ids: list[int] | None = None,
     ) -> Optional[Event]:
         result = await self.db.execute(
             select(Event).where(Event.id == event_id).with_for_update()

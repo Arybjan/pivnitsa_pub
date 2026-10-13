@@ -9,11 +9,11 @@ from tests.conftest import USER_ID
 pytestmark = pytest.mark.asyncio
 
 
-async def test_create_uuid_and_draft_visibility(client, token, event_data):
+async def test_create_and_draft_visibility(client, token, event_data):
     created = await client.post("/api/v1/events", headers=token(), json=event_data)
     assert created.status_code == 201, created.text
     event = created.json()
-    assert event["created_by"] == str(USER_ID)
+    assert event["created_by"] == USER_ID
     assert event["status"] == "DRAFT"
     assert "starts_at" in event and "ends_at" in event
     path = f'/api/v1/events/{event["id"]}'

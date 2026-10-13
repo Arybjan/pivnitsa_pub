@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict, AliasChoices, field_validator
 from datetime import datetime, timezone
-from uuid import UUID
 from typing import Optional
 
 from app.models.events import EventStatus
@@ -42,7 +41,7 @@ class EventUpdate(EventDates):
 
 class EventPublishRequest(BaseModel):
     send_notifications: bool = Field(True, description="Отправлять ли уведомления гостям")
-    recipient_ids: list[UUID] | None = Field(None, description="Explicit recipients; otherwise all active guests")
+    recipient_ids: list[int] | None = Field(None, description="Explicit recipients; otherwise all active guests")
 
 # === Response Schemas ===
 
@@ -54,7 +53,7 @@ class EventOut(BaseModel):
     start_datetime: datetime = Field(validation_alias=AliasChoices("starts_at", "start_datetime"), serialization_alias="starts_at")
     end_datetime: Optional[datetime] = Field(validation_alias=AliasChoices("ends_at", "end_datetime"), serialization_alias="ends_at")
     status: EventStatus
-    created_by: UUID
+    created_by: int
     created_at: datetime
     updated_at: datetime
 

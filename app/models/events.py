@@ -25,7 +25,7 @@ class Event(Base):
     start_datetime = Column(DateTime(timezone=True), nullable=False)
     end_datetime = Column(DateTime(timezone=True), nullable=True)
     status = Column(Enum(EventStatus), nullable=False, default = EventStatus.DRAFT)
-    created_by = Column(Uuid, nullable=False)
+    created_by = Column(BigInteger, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 

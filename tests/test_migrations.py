@@ -20,7 +20,7 @@ def test_migrations_from_empty_database(tmp_path):
         assert result.returncode == 0, result.stderr
     import sqlite3
     with sqlite3.connect(tmp_path / "events.db") as db:
-        assert db.execute("select version_num from alembic_version").fetchone() == ("0002",)
+        assert db.execute("select version_num from alembic_version").fetchone() == ("0003",)
         tables = {row[0] for row in db.execute("select name from sqlite_master where type='table'")}
         assert {"events", "event_outbox"} <= tables
 
@@ -29,9 +29,9 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_postgres_adopts_legacy_and_requires_author_mapping():
+async def test_postgres_legacy_authors_keep_integer_ids():
     import asyncpg
-    from uuid import uuid4, UUID
+    from uuid import uuid4
     from datetime import timezone
     url = os.environ.get("EVENT_TEST_DATABASE_URL")
     if not url or not url.startswith("postgresql"):
@@ -62,7 +62,7 @@ async def test_postgres_adopts_legacy_and_requires_author_mapping():
         upgraded = migrate("head")
         assert upgraded.returncode == 0, upgraded.stderr
         row = await connection.fetchrow("SELECT created_by, start_datetime, status FROM events")
-        assert row["created_by"] == UUID("6be6b360-313a-4f67-bafd-9dd1bdbd7c31")
+        assert row["created_by"] == 123
         assert row["status"] == "FINISHED"
         assert row["start_datetime"].astimezone(timezone.utc).hour == 18
         repeated = migrate("head")
