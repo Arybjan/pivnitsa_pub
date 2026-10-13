@@ -23,6 +23,8 @@ def booking_payload(booking: Booking, **extra) -> dict:
         "table_id": booking.table_id,
         "guests": booking.guests,
         "status": booking.status.value,
+        "starts_at": booking.starts_at.isoformat() if booking.starts_at else None,
+        "source": booking.source,
         "expires_at": booking.expires_at.isoformat() if booking.expires_at else None,
         **extra,
     }

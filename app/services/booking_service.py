@@ -1,20 +1,33 @@
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.messaging.publisher import BookingEventPublisher, booking_payload, publisher
-from app.models.booking import Booking, BookingStatus
+from app.models.booking import ACTIVE_STATUSES, Booking, BookingSource, BookingStatus
 from app.repositories.booking_repository import BookingRepository
-from app.schemas.booking import BookingCreate
+from app.schemas.booking import (
+    AdminBookingCreate,
+    AdminBookingUpdate,
+    BookingCreate,
+    check_prepayment,
+)
 
 
 logger = logging.getLogger(__name__)
 
 # Сколько минут стол держится за гостем до оплаты
 BOOKING_HOLD_MINUTES = int(os.getenv("BOOKING_HOLD_MINUTES", "15"))
+
+# Часовой пояс заведения: по нему считается дата брони
+VENUE_TIMEZONE = ZoneInfo(os.getenv("VENUE_TIMEZONE", "Asia/Bishkek"))
+
+
+def local_date(moment: datetime) -> date:
+    return moment.astimezone(VENUE_TIMEZONE).date()
 
 
 class BookingService:
@@ -170,10 +183,109 @@ class BookingService:
 
         return "confirmed"
 
+    def list_bookings(self, **filters) -> list[Booking]:
+        return self.repository.list_filtered(**filters)
+
+    def _save_checked(self, booking: Booking, exclude_id: int | None = None) -> None:
+        """Проверка двойной брони и commit под блокировкой стола."""
+        self.repository.lock_table(booking.table_id)
+
+        conflict = self.repository.find_conflict(
+            booking.table_id,
+            booking.event_id,
+            booking.booking_date,
+            exclude_id=exclude_id,
+        )
+        if conflict:
+            self.db.rollback()
+            raise ValueError(conflict)
+
+        try:
+            self.db.flush()
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            raise ValueError("Table is already booked")
+
+        self.db.refresh(booking)
+
+    def create_admin_booking(
+        self,
+        admin_id: int,
+        data: AdminBookingCreate,
+    ) -> Booking:
+        # Бронь от администратора сразу подтверждена: оплата не через приложение
+        booking = Booking(
+            user_id=admin_id,
+            phone=data.guest_phone,
+            guest_name=data.guest_name,
+            table_id=data.table_id,
+            event_id=data.event_id,
+            starts_at=data.starts_at,
+            booking_date=local_date(data.starts_at),
+            guests=data.guests,
+            total_amount=data.total_amount,
+            prepayment=data.prepayment,
+            prepayment_paid=data.prepayment_paid,
+            source=BookingSource.ADMIN.value,
+            status=BookingStatus.CONFIRMED,
+            expires_at=datetime.now(timezone.utc),
+        )
+        self.db.add(booking)
+        self._save_checked(booking)
+
+        self.publisher.publish_threadsafe(
+            "booking.confirmed",
+            booking_payload(booking, confirmed_by="admin"),
+        )
+
+        return booking
+
+    def update_admin_booking(
+        self,
+        booking_id: int,
+        data: AdminBookingUpdate,
+    ) -> Booking | None:
+        booking = self.repository.get_by_id(booking_id, for_update=True)
+
+        if booking is None:
+            self.db.rollback()
+            return None
+
+        if booking.status not in ACTIVE_STATUSES:
+            self.db.rollback()
+            raise ValueError("Only active bookings can be changed")
+
+        changes = data.model_dump(exclude_unset=True)
+
+        if "guest_phone" in changes:
+            changes["phone"] = changes.pop("guest_phone")
+        if "starts_at" in changes:
+            changes["booking_date"] = local_date(changes["starts_at"])
+
+        for field, value in changes.items():
+            setattr(booking, field, value)
+
+        if booking.event_id is None and booking.starts_at is None:
+            self.db.rollback()
+            raise ValueError("Booking needs an event or a start time")
+
+        try:
+            check_prepayment(booking.total_amount, booking.prepayment)
+        except ValueError:
+            self.db.rollback()
+            raise
+
+        self._save_checked(booking, exclude_id=booking.id)
+
+        return booking
+
     def cancel_booking(
         self,
         booking_id: int,
         user_id: int,
+        is_admin: bool = False,
+        reason: str | None = None,
     ) -> Booking | None:
 
         booking = self.repository.get_by_id(booking_id, for_update=True)
@@ -181,7 +293,8 @@ class BookingService:
         if booking is None:
             return None
 
-        if booking.user_id != user_id:
+        # Гость отменяет только свою бронь, администратор - любую
+        if booking.user_id != user_id and not is_admin:
             self.db.rollback()
             return None
 
@@ -195,6 +308,7 @@ class BookingService:
         # CONFIRMED означает, что бронь оплачена — payment-service вернёт деньги
         previous_status = booking.status.value
         booking.status = BookingStatus.CANCELLED
+        booking.cancel_reason = reason
 
         self.db.commit()
         self.db.refresh(booking)
@@ -203,7 +317,7 @@ class BookingService:
             "booking.cancelled",
             booking_payload(
                 booking,
-                reason="user",
+                reason="admin" if is_admin and booking.user_id != user_id else "user",
                 previous_status=previous_status,
             ),
         )

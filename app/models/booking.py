@@ -1,7 +1,19 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from enum import Enum
 
-from sqlalchemy import BigInteger, DateTime, Integer, String
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    text,
+)
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,8 +31,34 @@ class BookingStatus(str, Enum):
     EXPIRED = "EXPIRED"
 
 
+# Активные брони занимают стол
+ACTIVE_STATUSES = (BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED)
+
+
+class BookingSource(str, Enum):
+    APP = "APP"      # гость сам через приложение
+    ADMIN = "ADMIN"  # администратор (гость позвонил, пришёл без брони)
+
+
 class Booking(Base):
     __tablename__ = "bookings"
+    __table_args__ = (
+        # Бронь либо на мероприятие, либо на дату и время
+        CheckConstraint(
+            "event_id IS NOT NULL OR starts_at IS NOT NULL",
+            name="ck_booking_event_or_time",
+        ),
+        # Обычный вечер без мероприятия: одна активная бронь стола на день
+        Index(
+            "uq_active_booking_table_date",
+            "table_id",
+            "booking_date",
+            unique=True,
+            postgresql_where=text(
+                "event_id IS NULL AND status IN ('PENDING_PAYMENT', 'CONFIRMED')"
+            ),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(
         BigInteger,
@@ -37,9 +75,22 @@ class Booking(Base):
         nullable=False
     )
 
-    event_id: Mapped[int] = mapped_column(
+    event_id: Mapped[int | None] = mapped_column(
         BigInteger,
-        nullable=False
+        nullable=True
+    )
+
+    # Время прихода гостей. Для брони из приложения на мероприятие может быть пустым
+    starts_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    # Дата брони по местному времени заведения (VENUE_TIMEZONE)
+    booking_date: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+        index=True
     )
 
     guests: Mapped[int] = mapped_column(
@@ -51,6 +102,41 @@ class Booking(Base):
     phone: Mapped[str | None] = mapped_column(
         String(20),
         nullable=True
+    )
+
+    guest_name: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True
+    )
+
+    total_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True
+    )
+
+    prepayment: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True
+    )
+
+    # Предоплата внесена (иначе оплата при входе)
+    prepayment_paid: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False
+    )
+
+    cancel_reason: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True
+    )
+
+    source: Mapped[str] = mapped_column(
+        String(10),
+        default=BookingSource.APP.value,
+        server_default=BookingSource.APP.value,
+        nullable=False
     )
 
     status: Mapped[BookingStatus] = mapped_column(
