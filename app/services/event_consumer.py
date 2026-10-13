@@ -3,7 +3,10 @@ import json
 import logging
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
+
 import aio_pika
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
@@ -16,6 +19,29 @@ logger = logging.getLogger(__name__)
 
 _is_running = False
 _connection: aio_pika.abc.AbstractRobustConnection | None = None
+
+
+def format_local_datetime(value: str) -> str:
+    """ISO-время -> "ДД.ММ.ГГГГ в ЧЧ:ММ" по местному времени заведения."""
+    dt = datetime.fromisoformat(value)
+    # Event Service присылает время в UTC с поясом; время без пояса считаем уже местным
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(ZoneInfo(settings.VENUE_TIMEZONE))
+    return dt.strftime("%d.%m.%Y в %H:%M")
+
+
+async def resolve_table_number(table_id: Any) -> Any:
+    """Номер стола из Venue Service (в брони хранится только id стола)."""
+    if not settings.VENUE_SERVICE_URL or table_id is None:
+        return table_id
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            response = await client.get(f"{settings.VENUE_SERVICE_URL}/api/v1/tables/{table_id}")
+        if response.status_code == 200:
+            return response.json().get("number", table_id)
+    except httpx.HTTPError as exc:
+        logger.warning(f"Venue Service unavailable for table_id={table_id}: {exc}")
+    return table_id
 
 
 async def process_event_message(routing_key: str, data: dict[str, Any], session: AsyncSession) -> list[Notification]:
@@ -36,12 +62,15 @@ async def process_event_message(routing_key: str, data: dict[str, Any], session:
     related_booking_id = None
     formatted_date = ""
 
+    # В брони только id стола, гостю нужен номер
+    if routing_key.startswith("booking."):
+        table_id = await resolve_table_number(table_id)
+
     if routing_key == "event.published":
         start_datetime = data.get("start_datetime", "")
         formatted_date = start_datetime
         try:
-            dt = datetime.fromisoformat(start_datetime)
-            formatted_date = dt.strftime("%d.%m.%Y в %H:%M")
+            formatted_date = format_local_datetime(start_datetime)
         except Exception:
             pass
 

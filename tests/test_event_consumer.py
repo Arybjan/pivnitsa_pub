@@ -170,3 +170,34 @@ async def test_consumer_binds_only_named_exchanges(monkeypatch):
 
     bound = {call.args[0] for call in queue.bind.call_args_list}
     assert bound == {"events_exchange", "bookings_exchange"}
+
+
+@pytest.mark.asyncio
+async def test_event_time_shown_in_venue_timezone():
+    payload = {"event_id": 7, "title": "Новый год", "start_datetime": "2026-12-31T16:00:00+00:00"}
+
+    result = await process_event_message("event.published", payload, _create_mock_session())
+
+    assert "31.12.2026 в 22:00" in result[0].message
+
+
+@pytest.mark.asyncio
+async def test_booking_notification_uses_table_number(monkeypatch):
+    import httpx
+    import respx
+
+    monkeypatch.setattr(settings, "VENUE_SERVICE_URL", "http://venue.test")
+    payload = {"booking_id": 1, "user_id": 5, "table_id": 4, "status": "CONFIRMED"}
+
+    with respx.mock:
+        respx.get("http://venue.test/api/v1/tables/4").mock(
+            return_value=httpx.Response(200, json={"id": 4, "number": 8})
+        )
+        result = await process_event_message("booking.confirmed", payload, _create_mock_session())
+    assert "№8" in result[0].message
+
+    # Venue недоступен - уведомление всё равно создаётся, с id стола
+    with respx.mock:
+        respx.get("http://venue.test/api/v1/tables/4").mock(side_effect=httpx.ConnectError("down"))
+        result = await process_event_message("booking.confirmed", payload, _create_mock_session())
+    assert "№4" in result[0].message
