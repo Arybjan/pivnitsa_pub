@@ -19,6 +19,7 @@ from app.schemas.booking import (
     BookingResponse,
 )
 from app.services.booking_service import BookingService
+from app.services.event_client import EventNotBookable, EventServiceUnavailable
 
 
 router = APIRouter(
@@ -44,6 +45,18 @@ def create_booking(
             user_id=int(token["sub"]),
             phone=token.get("phone"),
             data=data,
+        )
+
+    except EventNotBookable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+
+    except EventServiceUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Event service is unavailable, try again later",
         )
 
     except ValueError as exc:

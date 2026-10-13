@@ -179,3 +179,78 @@ def test_online_payment_recorded_as_prepayment(client, guest):
     assert confirmed["status"] == "CONFIRMED"
     assert float(confirmed["prepayment"]) == 2000
     assert confirmed["prepayment_paid"] is True
+
+
+def test_app_booking_conflicts_with_plain_booking_same_day(client, admin, guest, monkeypatch):
+    from datetime import datetime, timezone
+
+    from app.services import booking_service
+
+    # мероприятие 20.12 в 22:00 по Бишкеку
+    monkeypatch.setattr(
+        booking_service,
+        "get_bookable_event_start",
+        lambda event_id: datetime(2026, 12, 20, 16, 0, tzinfo=timezone.utc),
+    )
+
+    assert client.post(f"{URL}/admin", headers=admin, json=admin_booking()).status_code == 201
+
+    response = client.post(URL, headers=guest, json={"table_id": 1, "event_id": 3, "guests": 2})
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Table is already booked for this date"
+
+    booking = client.post(URL, headers=guest, json={"table_id": 2, "event_id": 3, "guests": 2}).json()
+    assert booking["booking_date"] == "2026-12-20"
+    assert booking["starts_at"].startswith("2026-12-20T16:00")
+
+    # стол занят бронью из приложения - админ на обычный вечер его не получит
+    response = client.post(f"{URL}/admin", headers=admin, json=admin_booking(table_id=2))
+    assert response.status_code == 409
+
+
+def test_app_booking_event_checks(client, guest, monkeypatch):
+    from app.services import booking_service
+    from app.services.event_client import EventNotBookable, EventServiceUnavailable
+
+    def not_bookable(event_id):
+        raise EventNotBookable("Event has already started")
+
+    def unavailable(event_id):
+        raise EventServiceUnavailable()
+
+    body = {"table_id": 1, "event_id": 3, "guests": 2}
+
+    monkeypatch.setattr(booking_service, "get_bookable_event_start", not_bookable)
+    response = client.post(URL, headers=guest, json=body)
+    assert (response.status_code, response.json()["detail"]) == (409, "Event has already started")
+
+    monkeypatch.setattr(booking_service, "get_bookable_event_start", unavailable)
+    assert client.post(URL, headers=guest, json=body).status_code == 503
+
+
+def test_event_client(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    import httpx
+    import pytest
+    import respx
+
+    from app.services import event_client
+
+    monkeypatch.setattr(event_client, "EVENT_SERVICE_URL", "http://event.test")
+    future = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+    with respx.mock:
+        respx.get("http://event.test/api/v1/events/1").mock(return_value=httpx.Response(200, json={"starts_at": future}))
+        respx.get("http://event.test/api/v1/events/2").mock(return_value=httpx.Response(404, json={"detail": "Event not found"}))
+        respx.get("http://event.test/api/v1/events/3").mock(return_value=httpx.Response(200, json={"starts_at": past}))
+        respx.get("http://event.test/api/v1/events/4").mock(side_effect=httpx.ConnectError("down"))
+
+        assert event_client.get_bookable_event_start(1).isoformat() == future
+        with pytest.raises(event_client.EventNotBookable):
+            event_client.get_bookable_event_start(2)
+        with pytest.raises(event_client.EventNotBookable):
+            event_client.get_bookable_event_start(3)
+        with pytest.raises(event_client.EventServiceUnavailable):
+            event_client.get_bookable_event_start(4)

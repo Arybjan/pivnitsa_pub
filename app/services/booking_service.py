@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from app.messaging.publisher import BookingEventPublisher, booking_payload, publisher
 from app.models.booking import ACTIVE_STATUSES, Booking, BookingSource, BookingStatus
 from app.repositories.booking_repository import BookingRepository
+from app.services.event_client import get_bookable_event_start
 from app.schemas.booking import (
     AdminBookingCreate,
     AdminBookingUpdate,
@@ -48,28 +49,23 @@ class BookingService:
         data: BookingCreate,
     ) -> Booking:
 
+        # Дата мероприятия нужна, чтобы бронь не пересеклась
+        # с бронью этого стола на обычный вечер в тот же день
+        starts_at = get_bookable_event_start(data.event_id)
+
         booking = Booking(
             user_id=user_id,
             phone=phone,
             table_id=data.table_id,
             event_id=data.event_id,
+            starts_at=starts_at,
+            booking_date=local_date(starts_at) if starts_at else None,
             guests=data.guests,
             status=BookingStatus.PENDING_PAYMENT,
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=BOOKING_HOLD_MINUTES),
         )
-
-        try:
-            booking = self.repository.create(booking)
-
-            self.db.commit()
-
-        except IntegrityError:
-            self.db.rollback()
-
-            raise ValueError(
-                "Table is already booked for this event"
-            )
-        self.db.refresh(booking)
+        self.db.add(booking)
+        self._save_checked(booking)
 
         # События отправляем только после commit, чтобы не сообщить о брони,
         # которая откатилась.
