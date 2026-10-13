@@ -12,6 +12,14 @@ class Settings(BaseSettings):
         min_length=32,
         validation_alias=AliasChoices("JWT_SECRET_KEY", "JWT_SECRET"),
     )
+    # Адреса фронтенда через запятую; "*" — разрешить всем (для разработки)
+    cors_origins: str = "*"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [
+            origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
+        ]
 
 
 @lru_cache

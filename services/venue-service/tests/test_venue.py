@@ -35,6 +35,19 @@ def test_health_and_openapi(client):
     assert "/api/v1/tables/availability" in response.json()["paths"]
 
 
+def test_cors_preflight_allows_admin_frontend(client):
+    response = client.options(
+        "/api/v1/tables",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
 def test_hall_crud_and_image_clear(client, admin):
     payload = {"name": " VIP ", "map_image_url": "https://example.com/map.png"}
     response = client.post("/api/v1/halls", json=payload, headers=admin)

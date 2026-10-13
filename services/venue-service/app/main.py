@@ -1,12 +1,21 @@
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api import router
+from app.config import get_settings
 from app.database import get_db
 
 app = FastAPI(title="Pivnitsa Venue Service", version="1.0.0")
+# Токен передаётся в заголовке Authorization, поэтому allow_credentials не нужен
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().cors_origin_list,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(router)
 
 
