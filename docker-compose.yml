@@ -1,0 +1,155 @@
+# Локальный стенд Pivnitsa: все сервисы + админка одной командой.
+#   cp .env.example .env && docker compose up -d --build
+#
+# Порты:  admin 3000 | auth 8001 | booking 8002 | venue 8003 | payment 8004
+#         notification 8005 | event 8006 | postgres 5440 | redis 6390
+#         rabbitmq 5672 (UI 15672, guest/guest)
+
+x-jwt: &jwt
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+  JWT_ALGORITHM: HS256
+
+x-depends-db: &depends-db
+  postgres:
+    condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5440:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6390:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  auth:
+    build: ${AUTH_DIR}
+    ports:
+      - "8001:8000"
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/auth_db
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: dev
+      # Код OTP печатается в лог и возвращается в ответе /otp/send (только dev)
+      SMS_PROVIDER: console
+      OTP_EXPOSE_IN_RESPONSE: "true"
+      NOTIFICATION_SERVICE_URL: http://notification:8000
+      CORS_ORIGINS: '["*"]'
+    depends_on:
+      <<: *depends-db
+      redis:
+        condition: service_healthy
+
+  event:
+    build: ${EVENT_DIR}
+    ports:
+      - "8006:8001"
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/event_db
+      REDIS_URL: redis://redis:6379/1
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      AUTH_SERVICE_URL: http://auth:8000
+    depends_on:
+      <<: *depends-db
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  venue:
+    build: ${VENUE_DIR}
+    ports:
+      - "8003:8000"
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/venue_db
+      CORS_ORIGINS: "*"
+    depends_on: *depends-db
+
+  booking:
+    build: ${BOOKING_DIR}
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8002:8000"
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/booking_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      BOOKING_HOLD_MINUTES: "15"
+      CORS_ORIGINS: "*"
+    depends_on:
+      <<: *depends-db
+      rabbitmq:
+        condition: service_healthy
+
+  payment:
+    build: ${PAYMENT_DIR}
+    ports:
+      - "8004:8004"
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/payment_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      BOOKING_SERVICE_URL: http://booking:8000
+      PAYMENT_GATEWAY_ENV: sandbox
+      CORS_ORIGINS: "*"
+    depends_on:
+      <<: *depends-db
+      rabbitmq:
+        condition: service_healthy
+
+  notification:
+    build: ${NOTIFICATION_DIR}
+    ports:
+      - "8005:8000"
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/notifications_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      NIKITA_TEST_MODE: "true"
+    depends_on:
+      <<: *depends-db
+      rabbitmq:
+        condition: service_healthy
+
+  # Статическая админка из ветки feature/fe-admin-panel
+  admin:
+    image: nginx:1.29-alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ${ADMIN_FRONTEND_DIR}:/usr/share/nginx/html:ro
+
+volumes:
+  postgres_data:
