@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, ClassVar, Self
 
 from pydantic import (
     AwareDatetime,
@@ -16,6 +16,8 @@ from app.models import TableStatus
 PositiveInt = Annotated[int, Field(gt=0, le=2_147_483_647, strict=True)]
 Coordinate = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
 Rotation = Annotated[float, Field(ge=0, lt=360, allow_inf_nan=False)]
+# Размер стола в долях схемы зала; None - размер по умолчанию на клиенте
+Size = Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)]
 Name = Annotated[str, Field(min_length=1, max_length=100)]
 Description = Annotated[str, Field(max_length=2000)]
 ImageUrl = Annotated[HttpUrl, Field(max_length=2048)]
@@ -26,11 +28,14 @@ class Input(BaseModel):
 
 
 class Patch(Input):
+    # Поля, которые можно сбросить в null
+    nullable_fields: ClassVar[frozenset[str]] = frozenset()
+
     @model_validator(mode="after")
     def validate_patch(self) -> Self:
         if not self.model_fields_set:
             raise ValueError("Provide at least one field")
-        for field in self.model_fields_set - {"map_image_url"}:
+        for field in self.model_fields_set - self.nullable_fields:
             if getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
         return self
@@ -46,6 +51,8 @@ class HallCreate(Input):
 
 
 class HallUpdate(Patch):
+    nullable_fields = frozenset({"map_image_url"})
+
     name: Name | None = None
     description: Description | None = None
     map_image_url: ImageUrl | None = None
@@ -77,16 +84,22 @@ class TableCreate(Input):
     x: Coordinate
     y: Coordinate
     rotation: Rotation = 0
+    width: Size | None = None
+    height: Size | None = None
     description: Description = ""
     status: TableStatus = TableStatus.ACTIVE
 
 
 class TableUpdate(Patch):
+    nullable_fields = frozenset({"width", "height"})
+
     number: PositiveInt | None = None
     capacity: Annotated[int, Field(gt=0, le=1000, strict=True)] | None = None
     x: Coordinate | None = None
     y: Coordinate | None = None
     rotation: Rotation | None = None
+    width: Size | None = None
+    height: Size | None = None
     description: Description | None = None
     status: TableStatus | None = None
 
@@ -99,6 +112,8 @@ class TableRead(ReadModel):
     x: float
     y: float
     rotation: float
+    width: float | None
+    height: float | None
     description: str
     status: TableStatus
     created_at: datetime

@@ -120,6 +120,17 @@ def test_table_crud_soft_delete_and_number_reuse(client, admin, table, database)
     assert response.json()["id"] != table["id"]
 
 
+def test_table_size_set_and_reset(client, admin, table):
+    path = f"/api/v1/tables/{table['id']}"
+    assert table["width"] is None and table["height"] is None
+    response = client.patch(path, headers=admin, json={"width": 0.15, "height": 0.2})
+    assert response.status_code == 200
+    assert (response.json()["width"], response.json()["height"]) == (0.15, 0.2)
+    response = client.patch(path, headers=admin, json={"width": None, "height": None})
+    assert response.status_code == 200
+    assert client.get(path).json()["width"] is None
+
+
 def test_number_unique_in_hall_and_filters(client, admin, table):
     payload = {"hall_id": table["hall_id"], "number": 1, "capacity": 6, "x": 0, "y": 0}
     assert client.post("/api/v1/tables", json=payload, headers=admin).status_code == 409
@@ -149,6 +160,8 @@ def test_number_unique_in_hall_and_filters(client, admin, table):
         {"x": -0.1},
         {"y": 1.1},
         {"rotation": 360},
+        {"width": 0},
+        {"height": 1.5},
         {"status": "BOOKED"},
         {"capacity": None},
         {"hall_id": 2},

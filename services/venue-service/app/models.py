@@ -85,6 +85,11 @@ class Table(TimestampMixin, Base):
             "x >= 0 AND x <= 1 AND y >= 0 AND y <= 1", name="ck_table_position"
         ),
         CheckConstraint("rotation >= 0 AND rotation < 360", name="ck_table_rotation"),
+        CheckConstraint(
+            "(width IS NULL OR (width > 0 AND width <= 1))"
+            " AND (height IS NULL OR (height > 0 AND height <= 1))",
+            name="ck_table_size",
+        ),
         CheckConstraint("status IN ('ACTIVE', 'UNAVAILABLE')", name="ck_table_status"),
         Index(
             "uq_table_active_number",
@@ -105,6 +110,8 @@ class Table(TimestampMixin, Base):
     x: Mapped[float] = mapped_column(Float)
     y: Mapped[float] = mapped_column(Float)
     rotation: Mapped[float] = mapped_column(Float, default=0)
+    width: Mapped[float | None] = mapped_column(Float)
+    height: Mapped[float | None] = mapped_column(Float)
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default=TableStatus.ACTIVE)
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
