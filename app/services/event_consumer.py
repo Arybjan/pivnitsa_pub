@@ -199,14 +199,13 @@ async def start_event_consumer():
             event_keys = ["event.published", "event.cancelled", "event.updated"]
             booking_keys = ["booking.created", "booking.confirmed", "booking.cancelled", "booking.expired"]
 
+            # RabbitMQ запрещает bind к default exchange (ACCESS_REFUSED), поэтому только именованные exchange
             for r_key in event_keys:
                 await service_queue.bind(events_exchange, routing_key=r_key)
-                await service_queue.bind(channel.default_exchange, routing_key=r_key)
 
             for b_key in booking_keys:
                 await service_queue.bind(bookings_exchange, routing_key=b_key)
                 await service_queue.bind(events_exchange, routing_key=b_key)
-                await service_queue.bind(channel.default_exchange, routing_key=b_key)
 
             await service_queue.consume(_on_message)
 

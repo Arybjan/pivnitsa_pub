@@ -144,3 +144,29 @@ async def test_process_event_duplicate_ignored():
     assert len(result) == 0
     mock_session.add.assert_not_called()
     mock_session.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_consumer_binds_only_named_exchanges(monkeypatch):
+    """RabbitMQ отклоняет bind к default exchange - consumer не должен его делать."""
+    from app.services import event_consumer
+
+    channel = MagicMock()
+    channel.set_qos = AsyncMock()
+    channel.declare_exchange = AsyncMock(side_effect=lambda name, *a, **k: name)
+    queue = MagicMock()
+    queue.bind = AsyncMock()
+
+    async def consume(callback):
+        event_consumer._is_running = False
+
+    queue.consume = consume
+    channel.declare_queue = AsyncMock(return_value=queue)
+    connection = MagicMock(is_closed=False)
+    connection.channel = AsyncMock(return_value=channel)
+    monkeypatch.setattr(event_consumer.aio_pika, "connect_robust", AsyncMock(return_value=connection))
+
+    await event_consumer.start_event_consumer()
+
+    bound = {call.args[0] for call in queue.bind.call_args_list}
+    assert bound == {"events_exchange", "bookings_exchange"}
