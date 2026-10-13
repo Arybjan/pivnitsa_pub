@@ -88,6 +88,8 @@ class TableCreate(Input):
     height: Size | None = None
     description: Description = ""
     status: TableStatus = TableStatus.ACTIVE
+    # Гости сейчас за столом (отметка смены, на доступность брони не влияет)
+    occupied: bool = False
 
 
 class TableUpdate(Patch):
@@ -102,6 +104,7 @@ class TableUpdate(Patch):
     height: Size | None = None
     description: Description | None = None
     status: TableStatus | None = None
+    occupied: bool | None = None
 
 
 class TableRead(ReadModel):
@@ -116,6 +119,7 @@ class TableRead(ReadModel):
     height: float | None
     description: str
     status: TableStatus
+    occupied: bool
     created_at: datetime
     updated_at: datetime
 

@@ -131,6 +131,16 @@ def test_table_size_set_and_reset(client, admin, table):
     assert client.get(path).json()["width"] is None
 
 
+def test_table_occupied_does_not_block_booking(client, admin, table):
+    path = f"/api/v1/tables/{table['id']}"
+    assert table["occupied"] is False
+    response = client.patch(path, headers=admin, json={"occupied": True})
+    assert response.status_code == 200
+    assert client.get(path).json()["occupied"] is True
+    assert availability(client, table["id"])["physically_available"] is True
+    assert client.patch(path, headers=admin, json={"occupied": None}).status_code == 422
+
+
 def test_number_unique_in_hall_and_filters(client, admin, table):
     payload = {"hall_id": table["hall_id"], "number": 1, "capacity": 6, "x": 0, "y": 0}
     assert client.post("/api/v1/tables", json=payload, headers=admin).status_code == 409

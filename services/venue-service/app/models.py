@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -9,6 +10,7 @@ from sqlalchemy import (
     Index,
     String,
     Text,
+    false,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -114,6 +116,9 @@ class Table(TimestampMixin, Base):
     height: Mapped[float | None] = mapped_column(Float)
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default=TableStatus.ACTIVE)
+    occupied: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
