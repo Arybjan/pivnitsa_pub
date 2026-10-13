@@ -283,7 +283,7 @@ async def test_sms_endpoint_triggers_service(client: AsyncClient):
         assert res.status_code == 200
         assert res.json() == {
             "status": "success",
-            "message": "SMS queued for +996 (555) 11-22-33"
+            "message": "SMS sent to +996 (555) 11-22-33"
         }
 
 

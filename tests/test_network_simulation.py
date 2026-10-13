@@ -168,7 +168,8 @@ async def test_flaky_network_simulation():
 async def test_api_endpoint_resilience_under_network_failure(client: AsyncClient):
     """
     Проверка отказоустойчивости API: когда внешний SMS-шлюз недоступен,
-    FastAPI эндпоинт /sms не блокируется и не крашит микросервис.
+    эндпоинт /sms честно отвечает 502 (вызывающий сервис покажет ошибку),
+    а сам микросервис продолжает работать.
     """
     respx.post(settings.NIKITA_API_URL).mock(side_effect=httpx.ConnectTimeout("Gateway timed out"))
 
@@ -177,7 +178,7 @@ async def test_api_endpoint_resilience_under_network_failure(client: AsyncClient
         "phone_number": "+996555998877",
         "message": "Тест устойчивости"
     })
-    assert res.status_code == 200
+    assert res.status_code == 502
 
     # Проверяем, что health check микросервиса продолжает работать штатно
     health = await client.get("/health")

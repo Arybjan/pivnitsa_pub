@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, func, or_, and_
 
@@ -184,6 +184,9 @@ async def delete_notification(notification_id: BigIntPath, current_user: Authent
 
 
 @router.post("/sms", response_model=SendSMSResponse)
-async def send_sms(data: SendSMSRequest, bg_tasks: BackgroundTasks, auth: AuthenticatedUser = Depends(require_service_or_admin)):
-    bg_tasks.add_task(send_sms_via_nikita, data.phone_number, data.message)
-    return SendSMSResponse(status="success", message=f"SMS queued for {data.phone_number}")
+async def send_sms(data: SendSMSRequest, auth: AuthenticatedUser = Depends(require_service_or_admin)):
+    # Отправляем сразу, а не в фоне: Auth должен знать, ушёл ли код,
+    # иначе человек ждёт SMS, которой не будет, а повторный запрос заблокирован на минуту
+    if not await send_sms_via_nikita(data.phone_number, data.message):
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="SMS gateway rejected the message or is unavailable")
+    return SendSMSResponse(status="success", message=f"SMS sent to {data.phone_number}")

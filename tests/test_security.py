@@ -91,10 +91,25 @@ async def test_regular_user_cannot_send_sms(auth_client):
 
 @pytest.mark.asyncio
 async def test_service_role_can_send_sms(auth_client):
+    from unittest.mock import AsyncMock, patch
+
     token = create_token(sub="1", role="service")
-    async with auth_client as ac:
-        res = await ac.post("/api/v1/notifications/sms", json={"phone_number": "996555123456", "message": "Test"}, headers={"Authorization": f"Bearer {token}"})
-        assert res.status_code == 200
+    with patch("app.api.v1.notifications.send_sms_via_nikita", new_callable=AsyncMock, return_value=True):
+        async with auth_client as ac:
+            res = await ac.post("/api/v1/notifications/sms", json={"phone_number": "996555123456", "message": "Test"}, headers={"Authorization": f"Bearer {token}"})
+            assert res.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_sms_gateway_failure_is_reported(auth_client):
+    """Шлюз отказал (нет баланса, неверный логин) - вызывающий сервис получает 502, а не "успех"."""
+    from unittest.mock import AsyncMock, patch
+
+    token = create_token(sub="1", role="service")
+    with patch("app.api.v1.notifications.send_sms_via_nikita", new_callable=AsyncMock, return_value=False):
+        async with auth_client as ac:
+            res = await ac.post("/api/v1/notifications/sms", json={"phone_number": "996555123456", "message": "Test"}, headers={"Authorization": f"Bearer {token}"})
+            assert res.status_code == 502
 
 
 @pytest.mark.asyncio
