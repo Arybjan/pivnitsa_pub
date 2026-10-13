@@ -169,6 +169,11 @@ class BookingService:
 
         booking.status = BookingStatus.CONFIRMED
 
+        # Онлайн-оплата из приложения - это предоплата брони (нужна для отчётов)
+        if amount is not None:
+            booking.prepayment = amount
+            booking.prepayment_paid = True
+
         self.db.commit()
         self.db.refresh(booking)
 

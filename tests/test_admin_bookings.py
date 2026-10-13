@@ -161,3 +161,21 @@ def test_guest_cancel_without_body_still_works(client, guest, events):
     assert response.status_code == 200
     assert response.json()["cancel_reason"] is None
     assert events[-1][1]["reason"] == "user"
+
+
+def test_online_payment_recorded_as_prepayment(client, guest):
+    from decimal import Decimal
+
+    from app.database import SessionLocal
+    from app.services.booking_service import BookingService
+
+    booking = client.post(URL, headers=guest, json={"table_id": 5, "event_id": 3, "guests": 2}).json()
+
+    with SessionLocal() as db:
+        result = BookingService(db).confirm_paid_booking(booking["id"], 42, Decimal("2000.00"))
+    assert result == "confirmed"
+
+    confirmed = client.get(f"{URL}/{booking['id']}", headers=guest).json()
+    assert confirmed["status"] == "CONFIRMED"
+    assert float(confirmed["prepayment"]) == 2000
+    assert confirmed["prepayment_paid"] is True
