@@ -107,6 +107,8 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/booking_db
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       BOOKING_HOLD_MINUTES: "15"
+      # по нему считается дата брони
+      VENUE_TIMEZONE: Asia/Bishkek
       CORS_ORIGINS: "*"
     depends_on:
       <<: *depends-db
