@@ -2,6 +2,25 @@
 
 Все сервисы, PostgreSQL, Redis, RabbitMQ и админка одной командой.
 
+## Быстрый старт (для всей команды)
+
+Нужен только **Docker Desktop** (и git). Python, PostgreSQL и остальное - в контейнерах.
+
+```bash
+git clone -b infra/local-stack https://github.com/Arybjan/pivnitsa_pub.git pivnitsa-infra
+cd pivnitsa-infra
+./scripts/bootstrap.sh
+```
+
+Скрипт скачает сервисы и админку в `./src`, создаст `.env`, соберёт и запустит стенд
+и предложит сделать ваш номер владельцем. Через несколько минут админка откроется на
+http://localhost:3000/login-form/index.html
+
+Обновить до свежих веток: `./scripts/bootstrap.sh --no-owner`.
+Windows: запускайте из WSL или Git Bash.
+
+Ниже - ручная раскладка, по которой стенд собирался изначально.
+
 ## Структура папок
 
 Каждый сервис — отдельный git worktree рядом с этой папкой (пути настраиваются в `.env`):
