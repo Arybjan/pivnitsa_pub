@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="../normalize/normalize.css">
-  <link rel="stylesheet" href="./index.css">
+  <link rel="stylesheet" href="../normalize/normalize.css?v=20261013b">
+  <link rel="stylesheet" href="../ui/ui.css?v=20261013b">
+  <link rel="stylesheet" href="./index.css?v=20261013b">
   <title>Вход в админ-панель: Бар Пивница</title>
 </head>
 <body>
@@ -13,8 +14,26 @@
     <div class="login-card">
       
       <div class="card-header">
-        <h1>Вход в админ-панель</h1>
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 8h10v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/>
+            <path d="M15 11h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2"/>
+            <path d="M5 8a2.5 2.5 0 0 1 2.5-3 3 3 0 0 1 5 0A2.5 2.5 0 0 1 15 8"/>
+            <path d="M9 12v5M12 12v5"/>
+          </svg>
+        </div>
+        <h1 id="loginTitle">Вход в админ-панель</h1>
         <p class="subtitle">Бар Пивница</p>
+      </div>
+
+      <!-- Регистрация - отдельная страница -->
+      <a href="../register-form/index.html" id="registerLink" class="btn btn-secondary">Зарегистрироваться</a>
+      <div class="divider"><span>или войдите</span></div>
+
+      <!-- Способ входа -->
+      <div class="login-tabs" id="loginTabs" role="tablist">
+        <button type="button" class="login-tab active" data-mode="sms" role="tab">По SMS</button>
+        <button type="button" class="login-tab" data-mode="password" role="tab">По паролю</button>
       </div>
 
       <!-- novalidate - отключает стандартную валидацию браузера ради JS -->
@@ -39,6 +58,21 @@
           <button type="button" id="changePhoneBtn" class="btn-link hidden">Изменить номер</button>
         </div>
 
+        <!-- Вход по паролю -->
+        <div id="passwordStep" class="hidden">
+          <div class="form-group">
+            <label for="passwordInput">Пароль</label>
+            <input type="password"
+            id="passwordInput"
+            autocomplete="current-password">
+
+            <span class="error-message" id="passwordError"></span>
+          </div>
+
+          <button type="submit" id="passwordLoginBtn" class="btn btn-primary">Войти</button>
+          <button type="button" id="forgotPasswordBtn" class="btn-link">Забыли пароль?</button>
+        </div>
+
         <!-- Запрос кода -->
         <button type="button" id="requestCodeBtn" class="btn btn-primary">Запросить код</button>
 
@@ -48,11 +82,32 @@
             <label for="smsInput">SMS-код</label>
             <input type="text"
             id="smsInput"
-            placeholder="Введите 4-хзначный код"
-            maxlength="4"
+            inputmode="numeric"
+            placeholder="Введите код из SMS"
+            maxlength="8"
             autocomplete="one-time-code">
 
             <span class="error-message" id="smsError"></span>
+          </div>
+
+          <!-- Новый пароль (только при восстановлении) -->
+          <div id="newPasswordGroup" class="hidden">
+            <div class="form-group">
+              <label for="newPasswordInput">Новый пароль</label>
+              <input type="password"
+              id="newPasswordInput"
+              placeholder="От 8 символов, буквы и цифры"
+              autocomplete="new-password">
+            </div>
+
+            <div class="form-group">
+              <label for="newPasswordRepeat">Повторите пароль</label>
+              <input type="password"
+              id="newPasswordRepeat"
+              autocomplete="new-password">
+
+              <span class="error-message" id="newPasswordError"></span>
+            </div>
           </div>
 
           <!-- Таймер повторной отправки -->
@@ -66,11 +121,17 @@
           <button type="submit" id="submitBtn" class="btn btn-primary">Войти</button>
         </div>
 
+        <button type="button" id="backToPasswordBtn" class="btn-link hidden">&larr; Назад ко входу по паролю</button>
+
       </form>
+
+      <p class="card-footer">Админ-панель бара «Пивница»</p>
 
     </div>
   </main>
+  <script src="../ui/ui.js?v=20261013b"></script>
+  <script src="../api/api.js?v=20261013b"></script>
 
-  <script src="./index.js"></script>
+  <script src="./index.js?v=20261013b"></script>
 </body>
 </html>

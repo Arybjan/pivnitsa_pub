@@ -4,8 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Управление мероприятиями: Бар Пивница</title>
-  <link rel="stylesheet" href="../normalize/normalize.css">
-  <link rel="stylesheet" href="./events.css">
+  <link rel="stylesheet" href="../normalize/normalize.css?v=20261013b">
+  <link rel="stylesheet" href="../ui/ui.css?v=20261013b">
+  <link rel="stylesheet" href="./events.css?v=20261013c">
 </head>
 <body>
   
@@ -15,7 +16,10 @@
       <h2>🎉 Афиша и мероприятия</h2>
     </div>
 
-    <button id="openCreateModalBtn" class="btn btn-primary">+ Создать мероприятие</button>
+    <button id="openCreateModalBtn" class="btn btn-primary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      Создать мероприятие
+    </button>
   </header>
 
 
@@ -27,7 +31,7 @@
         <button class="filter-btn active" data-status="all">Все (<span id="countAll">0</span>)</button>
         <button class="filter-btn" data-status="published">Опубликованные (<span id="countPublished">0</span>)</button>
         <button class="filter-btn" data-status="draft">Черновики (<span id="countDraft">0</span>)</button>
-        <button class="filter-btn" data-status="cancelled">Снятые (<span id="countCancelled">0</span>)</button>
+        <button class="filter-btn" data-status="cancelled">Отменённые (<span id="countCancelled">0</span>)</button>
       </div>
     </div>
 
@@ -81,7 +85,9 @@
       </form>
     </div>
   </div>
+  <script src="../ui/ui.js?v=20261013b"></script>
+  <script src="../api/api.js?v=20261013b"></script>
 
-  <script src="./events.js"></script>
+  <script src="./events.js?v=20261013c"></script>
 </body>
 </html>

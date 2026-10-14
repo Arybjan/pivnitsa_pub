@@ -3,30 +3,39 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="../normalize/normalize.css">
-  <link rel="stylesheet" href="./main.css">
+  <link rel="stylesheet" href="../normalize/normalize.css?v=20261013b">
+  <link rel="stylesheet" href="../ui/ui.css?v=20261013b">
+  <link rel="stylesheet" href="./main.css?v=20261013g">
   <title>Главная: Бар Пивница</title>
 </head>
 <body>
 
   <header class="hub-header">
     <div class="logo">
-      <span class="logo-icon">🍺</span>
-      <h2>Бар Пивница</h2>
+      <span class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h10v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><path d="M15 11h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2"/><path d="M5 8a2.5 2.5 0 0 1 2.5-3 3 3 0 0 1 5 0A2.5 2.5 0 0 1 15 8"/><path d="M9 12v5M12 12v5"/></svg></span>
+      <div class="logo-text">
+        <h2>Бар Пивница</h2>
+        <span>Админ-панель</span>
+      </div>
     </div>
 
     <div class="user-info">
       <span class="user-role-badge" id="userRoleBadge">Загрузка...</span>
-      <button id="logoutBtn" class="btn-logout">Выйти</button>
+      <button id="logoutBtn" class="btn-logout" aria-label="Выйти" title="Выйти"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg><span>Выйти</span></button>
     </div>
   </header>
 
   
   <main class="hub-container">
+    <div class="hub-intro">
+      <h1 id="greeting">Здравствуйте!</h1>
+      <p>Выберите раздел, чтобы начать работу</p>
+    </div>
+
     <div class="cards-grid" id="cardsGrid">
 
       <a href="../hall-dashboard/dashboard.html" class="menu-card">
-        <div class="card-icon">🗺️</div>
+        <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="4" height="4" rx="1"/><rect x="13" y="13" width="4" height="4" rx="1"/><path d="M13 7h4M7 17h4"/></svg></div>
         <div class="card-body">
           <h3>Управление залом</h3>
           <p>Интерактивная схема зала, бронирование и список гостей</p>
@@ -34,13 +43,13 @@
 
         <div class="card-footer">
           <span>Перейти</span>
-          <span class="arrow">&rarr;</span>
+          <span class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
         </div>
       </a>
 
 
       <a href="../events-list/events.html" class="menu-card">
-        <div class="card-icon">🎉</div>
+        <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m12 13 1 2 2 .3-1.5 1.4.4 2.1-1.9-1-1.9 1 .4-2.1L9 15.3l2-.3z"/></svg></div>
         <div class="card-body">
           <h3>Мероприятия и афиша</h3>
           <p>Управление анонсами, выступлениями и вечеринками</p>
@@ -48,28 +57,30 @@
 
         <div class="card-footer">
           <span>Перейти</span>
-          <span class="arrow">&rarr;</span>
+          <span class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
         </div>
       </a>
 
 
       <a href="../owner-reports/reports.html" class="menu-card owner-only" id="reportsCard">
-        <div class="card-icon">📊</div>
+        <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-4M12 16V8M17 16v-7"/></svg></div>
         <div class="card-body">
-          <div class="card-header-badge">Владелец</div>
+          <div class="card-header-badge">Только владелец</div>
           <h3>Отчеты и выручка</h3>
           <p>Финансовая аналитика, загрузка зала, доход с броней и выручка</p>
         </div>
 
         <div class="card-footer">
           <span>Перейти</span>
-          <span class="arrow">&rarr;</span>
+          <span class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
         </div>
       </a>
 
     </div>
   </main>
+  <script src="../ui/ui.js?v=20261013b"></script>
+  <script src="../api/api.js?v=20261013b"></script>
 
-  <script src="./main.js"></script>
+  <script src="./main.js?v=20261013g"></script>
 </body>
 </html>

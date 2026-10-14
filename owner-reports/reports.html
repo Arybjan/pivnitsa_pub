@@ -4,8 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Отчеты и выручка: Бар Пивница</title>
-  <link rel="stylesheet" href="../normalize/normalize.css">
-  <link rel="stylesheet" href="./reports.css">
+  <link rel="stylesheet" href="../normalize/normalize.css?v=20261013b">
+  <link rel="stylesheet" href="../ui/ui.css?v=20261013b">
+  <link rel="stylesheet" href="./reports.css?v=20261013k">
 
   <!-- SheetJS для генерации excel -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -36,8 +37,8 @@
         <input type="date" id="endDate">
       </div>
 
-      <button id="applyFilterBtn" class="btn btn-primary">Сформировать</button>
-      <button id="exportExcelBtn" class="btn btn-success">📥 Выгрузить в Excel</button>
+      <button id="applyFilterBtn" class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg>Сформировать</button>
+      <button id="exportExcelBtn" class="btn btn-secondary btn-export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg>Выгрузить в Excel</button>
     </section>
 
 
@@ -92,7 +93,9 @@
     </section>
 
   </main>
+  <script src="../ui/ui.js?v=20261013b"></script>
+  <script src="../api/api.js?v=20261013b"></script>
 
-  <script src="./reports.js"></script>
+  <script src="./reports.js?v=20261013j"></script>
 </body>
 </html>

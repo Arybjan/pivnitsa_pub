@@ -1,12 +1,43 @@
+// без сессии администратора - на страницу входа
+api.requireAuth();
+
+// Размер зала в координатах схемы (одинаков на любом экране, на экран схема масштабируется)
+const HALL_WIDTH = 1000;
+const HALL_HEIGHT = 600;
+
+const MIN_ZOOM = 0.6; // меньше - столики на телефоне не читаются, дальше схема прокручивается
+const MAX_ZOOM = 1.4;
+
+
 // Инициализация Canvas
 const canvas = new fabric.Canvas('hallCanvas', {
   backgroundColor: 'transparent',
-  selection: false // запрет выделения нескольких объектов
+  selection: false, // запрет выделения нескольких объектов
+  allowTouchScrolling: true // на телефоне свайп по пустому месту прокручивает схему
 });
 
 const wrapper = document.querySelector('.canvas-wrapper');
-canvas.setWidth(wrapper.clientWidth);
-canvas.setHeight(wrapper.clientHeight);
+
+
+// Вписываем схему в доступное место
+function fitCanvasToWrapper() {
+  if(wrapper.clientWidth === 0) return; // вкладка схемы скрыта
+
+  const isMobile = window.matchMedia('(max-width: 900px)').matches;
+
+  // 2px - рамка .canvas-container
+  let zoom = (wrapper.clientWidth - 2) / HALL_WIDTH;
+
+  // на мобильном высота подстраивается под схему, на десктопе схема вписывается целиком
+  if(!isMobile) zoom = Math.min(zoom, (wrapper.clientHeight - 2) / HALL_HEIGHT);
+
+  zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+
+  canvas.setZoom(zoom);
+  canvas.setDimensions({ width: HALL_WIDTH * zoom, height: HALL_HEIGHT * zoom });
+}
+
+new ResizeObserver(fitCanvasToWrapper).observe(wrapper);
 
 
 // глобальный запрет выворачивания столиков наизнанку
@@ -17,30 +48,227 @@ fabric.Object.prototype.noScaleResetX = true;
 let currentFloor = 1;
 
 
-// временная БД столиков
-let tablesData = [
-  { id: 't1', floor: 1, number: '1', capacity: 4, status: 'free', x: 100, y: 100 },
-  { id: 't2', floor: 1, number: '2', capacity: 2, status: 'booked', x: 300, y: 100 },
-  { id: 't3', floor: 2, number: '201', capacity: 6, status: 'free', x: 150, y: 150 }
-];
+// Дата в формате Г-М-Д по местному времени (toISOString сдвигает дату в UTC)
+function toLocalDateString(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
 
-// временная БД бронирований
-let reservationsData = [
-  {
-    id: 'res_1',
-    tableId: 't2',
-    date: new Date().toISOString().split('T')[0], // установлено на сегодня с приколами ISO-формата
-    time: '19:00',
-    guestName: 'Алексей',
-    guestPhone: '+996 555 123456',
-    guestsCount: 4,
-    totalAmount: 5000,
-    prepayment: 1000,
-    paymentStatus: 'paid',
-    status: 'active',
-    cancelReason: ''
+  return `${y}-${m}-${d}`;
+}
+
+
+// Размер стола на схеме при масштабе 1
+const TABLE_WIDTH = 120;
+const TABLE_HEIGHT = 80;
+
+// Залы venue-сервиса: этаж 1 - первый зал, этаж 2 - второй
+const FLOOR_NAMES = ['1 этаж', '2 этаж'];
+let halls = [];
+
+// Столы загружаются из venue-сервиса
+let tablesData = [];
+
+// Столы с несохранённым положением или размером (сохраняются кнопкой "Сохранить схему")
+const dirtyLayout = new Set();
+
+// Брони на выбранную дату (из booking-сервиса)
+let reservationsData = [];
+
+// Брони на дату в окне бронирования, если она отличается от выбранной
+let modalReservations = null;
+
+// Мероприятия (из event-сервиса): бронь бывает на мероприятие или на обычный вечер
+let eventsData = [];
+
+const ACTIVE_BOOKING = ['PENDING_PAYMENT', 'CONFIRMED'];
+
+const BOOKING_STATUS_LABELS = {
+  PENDING_PAYMENT: 'Ждёт оплаты',
+  CONFIRMED: 'Активна',
+  CANCELLED: 'Отменена',
+  EXPIRED: 'Истекла'
+};
+
+
+// экранирование текста с сервера перед вставкой в HTML
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+})[ch]);
+
+// Телефоны Кыргызстана: в поле вводятся 9 цифр после +996, показываются как "555 123 456"
+function formatLocalPhone(digits) {
+  return digits.replace(/\D/g, '').slice(0, 9).replace(/^(\d{3})(\d{0,3})(\d{0,3}).*$/, (_, a, b, c) => [a, b, c].filter(Boolean).join(' '));
+}
+
+// "+996555123456" / "+996 555 123456" -> "555 123 456" для поля ввода
+function phoneToLocal(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+
+  return formatLocalPhone(digits.startsWith('996') ? digits.slice(3) : digits);
+}
+
+// для списка броней: "+996 555 123 456"
+function formatPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+
+  return digits.length === 12 && digits.startsWith('996') ? `+996 ${formatLocalPhone(digits.slice(3))}` : (phone || '');
+}
+
+// "ЧЧ:ММ" по местному времени
+function toLocalTime(iso) {
+  const date = new Date(iso);
+
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function eventsOnDate(date) {
+  return eventsData.filter(ev => toLocalDateString(new Date(ev.starts_at)) === date);
+}
+
+// BookingResponse -> формат списка и схемы
+function reservationFromApi(b) {
+  const event = eventsData.find(ev => ev.id === b.event_id);
+  const startsAt = b.starts_at || (event && event.starts_at);
+
+  return {
+    id: String(b.id),
+    tableId: String(b.table_id),
+    eventId: b.event_id,
+    eventTitle: event ? event.title : (b.event_id ? `Мероприятие #${b.event_id}` : ''),
+    date: b.booking_date || (startsAt ? toLocalDateString(new Date(startsAt)) : ''),
+    time: startsAt ? toLocalTime(startsAt) : '',
+    guestName: b.guest_name || 'Гость из приложения',
+    guestPhone: formatPhone(b.phone),
+    guestsCount: b.guests,
+    totalAmount: Number(b.total_amount) || 0,
+    prepayment: Number(b.prepayment) || 0,
+    // бронь из приложения подтверждается после онлайн-оплаты
+    paymentStatus: b.prepayment_paid || (b.source === 'APP' && b.status === 'CONFIRMED') ? 'paid' : 'unpaid',
+    status: ACTIVE_BOOKING.includes(b.status) ? 'active' : 'cancelled',
+    apiStatus: b.status,
+    source: b.source,
+    cancelReason: b.cancel_reason || ''
+  };
+}
+
+
+// Все мероприятия (бэкенд отдаёт максимум 100 за запрос)
+async function loadEvents() {
+  const items = [];
+  let offset = 0;
+  let page;
+
+  do {
+    page = await api.request('event', `/api/v1/events/all?limit=100&offset=${offset}`);
+    items.push(...page.items);
+    offset += page.items.length;
+  } while(page.has_next && page.items.length);
+
+  eventsData = items;
+}
+
+// Брони на дату: на обычный вечер (по дате) + на мероприятия этого дня (по event_id)
+async function fetchReservations(date) {
+  const requests = [api.request('booking', `/api/v1/bookings?date_from=${date}&date_to=${date}`)];
+
+  const eventIds = eventsOnDate(date).map(ev => ev.id);
+  if(eventIds.length) {
+    requests.push(api.request('booking', '/api/v1/bookings?' + eventIds.map(id => `event_id=${id}`).join('&')));
   }
-];
+
+  const byId = new Map();
+  (await Promise.all(requests)).flat().forEach(b => byId.set(b.id, b));
+
+  return [...byId.values()].map(reservationFromApi).filter(r => r.date === date);
+}
+
+async function loadReservations() {
+  const date = dateFilter.value;
+
+  try {
+    const items = await fetchReservations(date);
+    if(date === dateFilter.value) reservationsData = items; // пока грузили, дату могли сменить
+  } catch (err) {
+    ui.toast(`Брони не загрузились: ${err.message}`, 'error');
+  }
+}
+
+
+// Координаты на бэкенде - доли схемы зала (0..1), на канвасе - точки схемы HALL_WIDTH x HALL_HEIGHT
+const clamp01 = (value) => Math.min(1, Math.max(0, value));
+
+function floorOfHall(hallId) {
+  return halls.findIndex(h => h.id === hallId) + 1;
+}
+
+function hallOfFloor(floor) {
+  return halls[floor - 1];
+}
+
+// TableRead с бэкенда -> формат схемы
+function tableFromApi(t) {
+  return {
+    id: String(t.id),
+    floor: floorOfHall(t.hall_id),
+    number: String(t.number),
+    capacity: t.capacity,
+    // недоступен и занят хранятся на сервере, свободен / забронирован считается по броням
+    status: t.status === 'UNAVAILABLE' ? 'disabled' : t.occupied ? 'occupied' : 'free',
+    x: t.x * HALL_WIDTH,
+    y: t.y * HALL_HEIGHT,
+    scaleX: t.width ? t.width * HALL_WIDTH / TABLE_WIDTH : 1,
+    scaleY: t.height ? t.height * HALL_HEIGHT / TABLE_HEIGHT : 1,
+
+    // последнее сохранённое на сервере - для отката при ошибке
+    saved: { number: String(t.number), capacity: t.capacity, disabled: t.status === 'UNAVAILABLE', occupied: t.occupied }
+  };
+}
+
+// положение и размер стола -> поля бэкенда
+function layoutToApi(t) {
+  const isDefaultSize = Math.abs(t.scaleX - 1) < 0.001 && Math.abs(t.scaleY - 1) < 0.001;
+
+  return {
+    x: clamp01(t.x / HALL_WIDTH),
+    y: clamp01(t.y / HALL_HEIGHT),
+    width: isDefaultSize ? null : clamp01(TABLE_WIDTH * t.scaleX / HALL_WIDTH),
+    height: isDefaultSize ? null : clamp01(TABLE_HEIGHT * t.scaleY / HALL_HEIGHT)
+  };
+}
+
+
+// Залы: берём первые два, недостающие создаём (на свежей базе их нет)
+async function loadHalls() {
+  halls = (await api.request('venue', '/api/v1/halls?limit=200')).sort((a, b) => a.id - b.id);
+
+  for(let i = halls.length; i < FLOOR_NAMES.length; i++) {
+    halls.push(await api.request('venue', '/api/v1/halls', {
+      method: 'POST',
+      body: { name: FLOOR_NAMES[i], map_width: HALL_WIDTH, map_height: HALL_HEIGHT }
+    }));
+  }
+
+  halls = halls.slice(0, FLOOR_NAMES.length);
+}
+
+// Все столы обоих залов (бэкенд отдаёт максимум 200 за запрос)
+async function loadTables() {
+  const items = [];
+
+  for(const hall of halls) {
+    let page;
+    let offset = 0;
+
+    do {
+      page = await api.request('venue', `/api/v1/tables?hall_id=${hall.id}&limit=200&offset=${offset}`);
+      items.push(...page);
+      offset += page.length;
+    } while(page.length === 200);
+  }
+
+  tablesData = items.map(tableFromApi);
+}
 
 
 // Общий DOM
@@ -58,12 +286,36 @@ const canvasView = document.getElementById('canvasView');
 const reservationsSection = document.getElementById('reservationsSection');
 
 const dateFilter = document.getElementById('reservationDateFilter');
-dateFilter.value = new Date().toISOString().split('T')[0]; // ISO формат даты (Г-М-Д) и первая часть из формата (дата)
+dateFilter.value = toLocalDateString(new Date());
+
+const reservationSearch = document.getElementById('reservationSearch');
+
+// Бронь выбранного стола в боковой панели
+const tableBookingInfo = document.getElementById('tableBookingInfo');
+const tableBookingText = document.getElementById('tableBookingText');
+const bookTableBtn = document.getElementById('bookTableBtn');
+const openTableBookingBtn = document.getElementById('openTableBookingBtn');
+
+
+// Запоминаем вкладку и этаж между заходами на страницу
+function savePreference(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
+}
+
+function loadPreference(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+
+// Дата для людей: "13 октября"
+function formatDateHuman(dateString) {
+  return new Date(dateString + 'T00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long' });
+}
 
 
 
 // Переключение вкладок и этажей
-viewCanvasBtn.addEventListener('click', () => {
+function showCanvasView() {
   viewCanvasBtn.classList.add('active');
   viewReservationsBtn.classList.remove('active');
 
@@ -71,10 +323,12 @@ viewCanvasBtn.addEventListener('click', () => {
   canvasView.classList.remove('hidden');
   reservationsSection.classList.add('hidden');
 
+  savePreference('hallView', 'canvas');
+  fitCanvasToWrapper();
   renderFloor(currentFloor);
-});
+}
 
-viewReservationsBtn.addEventListener('click', () => {
+function showReservationsView() {
   viewReservationsBtn.classList.add('active');
   viewCanvasBtn.classList.remove('active');
 
@@ -82,8 +336,12 @@ viewReservationsBtn.addEventListener('click', () => {
   canvasView.classList.add('hidden');
   reservationsSection.classList.remove('hidden');
 
+  savePreference('hallView', 'reservations');
   renderReservations(); // обновляем таблицу при открытии вкладки
-});
+}
+
+viewCanvasBtn.addEventListener('click', showCanvasView);
+viewReservationsBtn.addEventListener('click', showReservationsView);
 
 
 
@@ -91,23 +349,18 @@ viewReservationsBtn.addEventListener('click', () => {
 const floor1Btn = document.getElementById('floor1Btn');
 const floor2Btn = document.getElementById('floor2Btn');
 
-floor1Btn.addEventListener('click', () => {
-  currentFloor = 1;
+function setFloor(floorNumber) {
+  currentFloor = floorNumber;
 
-  floor1Btn.classList.add('active');
-  floor2Btn.classList.remove('active');
+  floor1Btn.classList.toggle('active', floorNumber === 1);
+  floor2Btn.classList.toggle('active', floorNumber === 2);
 
-  renderFloor(1);
-});
+  savePreference('hallFloor', floorNumber);
+  renderFloor(floorNumber);
+}
 
-floor2Btn.addEventListener('click', () => {
-  currentFloor = 2;
-
-  floor2Btn.classList.add('active');
-  floor1Btn.classList.remove('active');
-  
-  renderFloor(2);
-});
+floor1Btn.addEventListener('click', () => setFloor(1));
+floor2Btn.addEventListener('click', () => setFloor(2));
 
 
 
@@ -194,6 +447,11 @@ function renderFloor(floorNumber) {
   canvas.clear();
   canvas.setBackgroundColor('transparent', canvas.renderAll.bind(canvas));
 
+  // clear() не вызывает selection:cleared - прячем панель свойств сами
+  tablePropsForm.classList.add('hidden');
+  tableBookingInfo.classList.add('hidden');
+  noSelectionText.classList.remove('hidden');
+
   // фильтр столиков только для нужного этажа
   const floorTables = tablesData.filter(t => t.floor === floorNumber);
 
@@ -212,11 +470,12 @@ function renderFloor(floorNumber) {
 function updateStats() {
   const currentTables = tablesData.filter(t => t.floor === currentFloor);
 
-  const freeCount = currentTables.filter(t => t.status === 'free').length;
-  const bookedCount = currentTables.filter(t => t.status !== 'free').length;
+  const count = (status) => currentTables.filter(t => t.status === status).length;
 
-  document.getElementById('statFreeCount').textContent = freeCount;
-  document.getElementById('statBookedCount').textContent = bookedCount;
+  document.getElementById('statFreeCount').textContent = count('free');
+  document.getElementById('statBookedCount').textContent = count('booked');
+  document.getElementById('statOccupiedCount').textContent = count('occupied');
+  document.getElementById('statDisabledCount').textContent = count('disabled');
   document.getElementById('statTotalSeats').textContent = currentTables.length;
 }
 
@@ -228,6 +487,7 @@ canvas.on('selection:updated', handleSelection);
 
 canvas.on('selection:cleared', () => {
   tablePropsForm.classList.add('hidden');
+  tableBookingInfo.classList.add('hidden');
   noSelectionText.classList.remove('hidden');
 });
 
@@ -244,15 +504,91 @@ function handleSelection(e) {
 
     noSelectionText.classList.add('hidden');
     tablePropsForm.classList.remove('hidden');
+
+    refreshTableBookingInfo();
   }
 }
 
 
 
+// Активная бронь столика на дату
+function getTableBooking(tableId, date = dateFilter.value) {
+  return reservationsData.find(r => r.tableId === tableId && r.date === date && r.status === 'active');
+}
+
+
+// Блок брони выбранного стола в боковой панели
+function refreshTableBookingInfo() {
+  const activeObject = canvas.getActiveObject();
+  if(!activeObject || !activeObject.tableData) {
+    tableBookingInfo.classList.add('hidden');
+
+    return;
+  }
+
+  const table = activeObject.tableData;
+  const booking = getTableBooking(table.id);
+  const dateText = formatDateHuman(dateFilter.value);
+
+  propStatus.value = table.status; // статус мог смениться автоматически (бронь, отмена, другая дата)
+
+  tableBookingInfo.classList.remove('hidden');
+
+  if(booking) {
+    tableBookingText.textContent = `Бронь на ${dateText}: ${booking.time}, ${booking.guestName}, ${booking.guestsCount} чел.`;
+    openTableBookingBtn.classList.remove('hidden');
+    bookTableBtn.classList.add('hidden');
+  } else if(table.status === 'disabled') {
+    tableBookingText.textContent = 'Стол недоступен для бронирования.';
+    openTableBookingBtn.classList.add('hidden');
+    bookTableBtn.classList.add('hidden');
+  } else {
+    tableBookingText.textContent = `Свободен на ${dateText}.`;
+    openTableBookingBtn.classList.add('hidden');
+    bookTableBtn.classList.remove('hidden');
+  }
+}
+
+
+// Бронь по столику: открыть существующую или создать новую
+function bookOrOpenTable(table) {
+  const booking = getTableBooking(table.id);
+
+  if(booking) {
+    openEditModal(booking.id);
+  } else if(table.status === 'disabled') {
+    ui.toast(`Стол №${table.number} недоступен для бронирования`, 'warning');
+  } else {
+    openNewReservationModal(table);
+  }
+}
+
+bookTableBtn.addEventListener('click', () => {
+  const activeObject = canvas.getActiveObject();
+  if(activeObject && activeObject.tableData) bookOrOpenTable(activeObject.tableData);
+});
+
+openTableBookingBtn.addEventListener('click', () => {
+  const activeObject = canvas.getActiveObject();
+  if(activeObject && activeObject.tableData) bookOrOpenTable(activeObject.tableData);
+});
+
+canvas.on('mouse:dblclick', (e) => {
+  if(e.target && e.target.tableData) bookOrOpenTable(e.target.tableData);
+});
+
+
+
+// Стол, свойства которого правят в панели. Запоминаем при вводе: к событию change
+// (потеря фокуса) клик по схеме уже может снять выделение
+let editedTableObject = null;
+
 // Изменение свойств столика в боковой панели
 function updateActiveTable() {
   const activeObject = canvas.getActiveObject();
   if(!activeObject || !activeObject.tableData) return;
+
+  editedTableObject = activeObject;
 
   const selectedDate = dateFilter.value;
   const hasActiveBooking = reservationsData.some(r =>
@@ -263,12 +599,12 @@ function updateActiveTable() {
   // проверяем изменение статуса
   if(propStatus.value !== activeObject.tableData.status) {
     if(propStatus.value === 'booked' && !hasActiveBooking) {
-      alert('Нельзя установить данный статус без активной брони!');
+      ui.toast('Статус «Забронирован» ставится автоматически при создании брони', 'warning');
       propStatus.value = activeObject.tableData.status; // возвращаем прежний статус
     }
 
     if (hasActiveBooking && (propStatus.value === 'free' || propStatus.value === 'disabled')) {
-      alert('Этот стол забронирован! Отмените или отредактируйте бронь в списке броней.');
+      ui.toast('На этот стол есть бронь. Сначала отмените или перенесите её', 'warning');
       propStatus.value = 'booked';
   
       return;
@@ -276,14 +612,17 @@ function updateActiveTable() {
   }
 
 
+  // пока поле вместимости пустое (пользователь печатает) - оставляем прежнее значение
+  const capacity = Number(propCapacity.value) > 0 ? Number(propCapacity.value) : activeObject.tableData.capacity;
+
   activeObject.tableData.number = propNumber.value;
-  activeObject.tableData.capacity = propCapacity.value;
+  activeObject.tableData.capacity = capacity;
   activeObject.tableData.status = propStatus.value;
 
   const found = tablesData.find(t => t.id === activeObject.tableData.id);
   if(found) {
     found.number = propNumber.value;
-    found.capacity = propCapacity.value;
+    found.capacity = capacity;
     found.status = propStatus.value;
   }
 
@@ -292,35 +631,167 @@ function updateActiveTable() {
   const text = activeObject.item(1);
 
   rect.set('fill', getStatusColor(propStatus.value));
-  text.set('text', `№${propNumber.value}\n(${propCapacity.value} чел)`);
+  text.set('text', `№${propNumber.value}\n(${capacity} чел)`);
 
   canvas.renderAll(); // перерисовка Canvas
   updateStats();
+  refreshTableBookingInfo();
+}
+
+// Сохранение номера, вместимости и доступности стола на сервере
+async function persistTableProps() {
+  const activeObject = editedTableObject;
+  editedTableObject = null;
+  if(!activeObject || !activeObject.tableData) return;
+
+  const data = activeObject.tableData;
+  const saved = data.saved;
+  const patch = {};
+
+  const number = Number(data.number);
+  if(data.number !== saved.number) {
+    if(!Number.isInteger(number) || number <= 0) {
+      ui.toast('Номер стола - целое число больше нуля', 'error');
+      revertTableProps(activeObject);
+
+      return;
+    }
+
+    patch.number = number;
+  }
+
+  if(data.capacity !== saved.capacity) patch.capacity = data.capacity;
+
+  // "Недоступен" - статус стола, "Занят" - отметка "гости за столом"
+  const disabled = data.status === 'disabled';
+  const occupied = data.status === 'occupied';
+  if(disabled !== saved.disabled) patch.status = disabled ? 'UNAVAILABLE' : 'ACTIVE';
+  if(occupied !== saved.occupied) patch.occupied = occupied;
+
+  if(Object.keys(patch).length === 0) return;
+
+  try {
+    await api.request('venue', `/api/v1/tables/${data.id}`, { method: 'PATCH', body: patch });
+  } catch (err) {
+    ui.toast(err.message, 'error');
+    revertTableProps(activeObject);
+
+    return;
+  }
+
+  saved.number = data.number;
+  saved.capacity = data.capacity;
+  saved.disabled = disabled;
+  saved.occupied = occupied;
+}
+
+// Откат свойств стола к сохранённым на сервере
+function revertTableProps(obj) {
+  const data = obj.tableData;
+  const found = tablesData.find(t => t.id === data.id);
+
+  data.number = data.saved.number;
+  data.capacity = data.saved.capacity;
+  if(data.saved.disabled) data.status = 'disabled';
+  else if(data.saved.occupied) data.status = 'occupied';
+  else if(data.status === 'disabled' || data.status === 'occupied') data.status = 'free';
+
+  if(found) Object.assign(found, { number: data.number, capacity: data.capacity, status: data.status });
+
+  // панель показывает этот стол, только если он всё ещё выбран
+  if(canvas.getActiveObject() === obj) {
+    propNumber.value = data.number;
+    propCapacity.value = data.capacity;
+    propStatus.value = data.status;
+  }
+
+  obj.item(1).set('text', `№${data.number}\n(${data.capacity} чел)`);
+  updateCanvasColorsByDate();
 }
 
 propNumber.addEventListener('input', updateActiveTable);
 propCapacity.addEventListener('input', updateActiveTable);
 propStatus.addEventListener('change', updateActiveTable);
 
+propNumber.addEventListener('change', persistTableProps);
+propCapacity.addEventListener('change', persistTableProps);
+propStatus.addEventListener('change', persistTableProps);
+
+
+
+// Первое свободное место на схеме (слева направо, сверху вниз), чтобы новые столы не ложились друг на друга
+function findFreeSpot() {
+  const WIDTH = 120;
+  const HEIGHT = 80;
+  const GAP = 20;
+
+  const rects = canvas.getObjects().filter(o => o.tableData).map(o => o.getBoundingRect(true));
+
+  for(let y = 40; y + HEIGHT <= HALL_HEIGHT; y += HEIGHT + GAP) {
+    for(let x = 40; x + WIDTH <= HALL_WIDTH; x += WIDTH + GAP) {
+      const overlaps = rects.some(r =>
+        x < r.left + r.width + GAP && x + WIDTH + GAP > r.left &&
+        y < r.top + r.height + GAP && y + HEIGHT + GAP > r.top
+      );
+
+      if(!overlaps) return { x, y };
+    }
+  }
+
+  return { x: 40, y: 40 }; // места нет - кладем в угол
+}
+
+
+// Следующий номер на этаже (1, 2, 3... на первом, 201, 202... на втором)
+function nextTableNumber(floor) {
+  const numbers = tablesData
+    .filter(t => t.floor === floor)
+    .map(t => parseInt(t.number, 10))
+    .filter(n => !isNaN(n));
+
+  if(numbers.length === 0) return String(floor === 1 ? 1 : floor * 100 + 1);
+
+  return String(Math.max(...numbers) + 1);
+}
 
 
 // Добавление столика
-document.getElementById('addTableBtn').addEventListener('click', () => {
-  const newTableData = {
-    id: 't_' + Date.now(),
-    floor: currentFloor,
-    number: String(tablesData.length + 1),
-    capacity: 4,
-    status: 'free',
+const addTableBtn = document.getElementById('addTableBtn');
 
-    x: 200,
-    y: 200,
+addTableBtn.addEventListener('click', async () => {
+  const hall = hallOfFloor(currentFloor);
+  if(!hall) return;
 
-    scaleX: 1,
-    scaleY: 1
-  };
+  const spot = findFreeSpot();
+  const floor = currentFloor;
+
+  addTableBtn.disabled = true;
+
+  let created;
+  try {
+    created = await api.request('venue', '/api/v1/tables', {
+      method: 'POST',
+      body: {
+        hall_id: hall.id,
+        number: Number(nextTableNumber(floor)),
+        capacity: 4,
+        x: clamp01(spot.x / HALL_WIDTH),
+        y: clamp01(spot.y / HALL_HEIGHT)
+      }
+    });
+  } catch (err) {
+    ui.toast(err.message, 'error');
+
+    return;
+  } finally {
+    addTableBtn.disabled = false;
+  }
+
+  const newTableData = tableFromApi(created);
 
   tablesData.push(newTableData);
+  if(floor !== currentFloor) return; // пока ждали ответ, переключили этаж
+
   const newGroup = createTableObject(newTableData);
   canvas.add(newGroup);
 
@@ -331,28 +802,82 @@ document.getElementById('addTableBtn').addEventListener('click', () => {
 
 
 // Удаление столика
-document.getElementById('deleteTableBtn').addEventListener('click', () => {
+document.getElementById('deleteTableBtn').addEventListener('click', async () => {
   const activeObject = canvas.getActiveObject();
   if(!activeObject || !activeObject.tableData) return;
 
   const tableId = activeObject.tableData.id;
-  // есть ли активная бронь на этот столик
-  const hasBookings = reservationsData.some(r => r.tableId === tableId && r.status === 'active');
-  if(hasBookings) {
-    alert('Нельзя удалить столик, на который есть активные бронирования! Сначала отмените брони.');
+
+  // активные брони на этот столик с сегодняшнего дня (или на мероприятие без даты)
+  let blocking;
+  try {
+    const today = toLocalDateString(new Date());
+    const active = await api.request('booking', `/api/v1/bookings?table_id=${tableId}&active=true`);
+    blocking = active
+      .filter(b => !b.booking_date || b.booking_date >= today)
+      .sort((a, b) => (a.booking_date || '').localeCompare(b.booking_date || ''));
+  } catch (err) {
+    ui.toast(err.message, 'error');
 
     return;
   }
 
-  if(!confirm(`Вы уверены, что хотите удалить столик №${activeObject.tableData.number}?`)) return;
+  if(blocking.length) {
+    // какие брони мешают: "31 декабря 22:00 - Алексей"
+    const describe = (b) => {
+      const when = b.booking_date ? formatDateHuman(b.booking_date) : 'дата мероприятия';
+      const time = b.starts_at ? ` ${toLocalTime(b.starts_at)}` : '';
 
-  // удаление (из локального массива)
+      return `${when}${time} - ${b.guest_name || 'гость из приложения'}`;
+    };
+
+    const shown = blocking.slice(0, 5).map(describe).join('; ');
+    const more = blocking.length > 5 ? ` и ещё ${blocking.length - 5}` : '';
+
+    const showBookings = await ui.confirm({
+      title: `На стол №${activeObject.tableData.number} есть брони`,
+      message: `Удалить стол можно после отмены броней: ${shown}${more}.`,
+      okText: 'Показать брони',
+      cancelText: 'Закрыть'
+    });
+
+    // переходим к списку броней на дату ближайшей
+    const firstDate = blocking.find(b => b.booking_date)?.booking_date;
+    if(showBookings && firstDate) {
+      dateFilter.value = firstDate;
+      showReservationsView();
+      await onDateChange();
+    }
+
+    return;
+  }
+
+  const ok = await ui.confirm({
+    title: `Удалить стол №${activeObject.tableData.number}?`,
+    message: 'Стол пропадёт со схемы. Отменить это действие нельзя.',
+    okText: 'Удалить',
+    danger: true
+  });
+
+  if(!ok) return;
+
+  try {
+    await api.request('venue', `/api/v1/tables/${tableId}`, { method: 'DELETE' });
+  } catch (err) {
+    ui.toast(err.message, 'error');
+
+    return;
+  }
+
   tablesData = tablesData.filter(t => t.id !== tableId);
+  dirtyLayout.delete(tableId);
   canvas.remove(activeObject);
   canvas.discardActiveObject();
 
   canvas.renderAll();
   updateStats();
+
+  ui.toast('Стол удалён', 'success');
 });
 
 
@@ -375,6 +900,12 @@ function checkTableCapacity() {
 
 modalGuestsCount.addEventListener('input', checkTableCapacity);
 
+// телефон гостя: только цифры, пробелы ставятся сами
+document.getElementById('modalGuestPhone').addEventListener('input', (e) => {
+  e.target.value = formatLocalPhone(e.target.value);
+});
+document.getElementById('modalTableSelect').addEventListener('change', checkTableCapacity);
+
 
 
 // Перетаскивание объекта
@@ -382,13 +913,13 @@ canvas.on('object:moving', (options) => {
   const target = options.target;
   if (!target.tableData) return;
 
-  const canvasWidth = canvas.getWidth();
-  const canvasHeight = canvas.getHeight();
+  const canvasWidth = HALL_WIDTH;
+  const canvasHeight = HALL_HEIGHT;
   const SNAP_THRESHOLD = 15;
 
   // 1. Сначала ограничиваем движение пределами канваса
   target.setCoords();
-  let targetRect = target.getBoundingRect();
+  let targetRect = target.getBoundingRect(true);
 
   if (targetRect.left < 0) {
     target.left += -targetRect.left;
@@ -404,13 +935,13 @@ canvas.on('object:moving', (options) => {
   }
 
   target.setCoords();
-  targetRect = target.getBoundingRect();
+  targetRect = target.getBoundingRect(true);
 
   // 2. Расчет прилипания к соседним столикам
   canvas.getObjects().forEach((obj) => {
     if (obj === target || !obj.tableData) return;
 
-    const objRect = obj.getBoundingRect();
+    const objRect = obj.getBoundingRect(true);
 
     const isNearbyY = Math.abs(targetRect.top - objRect.top) < objRect.height + SNAP_THRESHOLD;
     const isNearbyX = Math.abs(targetRect.left - objRect.left) < objRect.width + SNAP_THRESHOLD;
@@ -462,11 +993,11 @@ canvas.on('object:scaling', (options) => {
   if (target.scaleX < 0.3) target.scaleX = 0.3;
   if (target.scaleY < 0.3) target.scaleY = 0.3;
 
-  const canvasWidth = canvas.getWidth();
-  const canvasHeight = canvas.getHeight();
+  const canvasWidth = HALL_WIDTH;
+  const canvasHeight = HALL_HEIGHT;
 
   target.setCoords();
-  const rect = target.getBoundingRect();
+  const rect = target.getBoundingRect(true);
 
   // Ограничение выхода за границы при масштабировании
   if (rect.left < 0) target.left -= rect.left;
@@ -496,10 +1027,15 @@ function syncTableData(target) {
 
   const found = tablesData.find(t => t.id === target.tableData.id);
   if (found) {
+    const moved = found.x !== target.left || found.y !== target.top
+      || found.scaleX !== target.scaleX || found.scaleY !== target.scaleY;
+
     found.x = target.left;
     found.y = target.top;
     found.scaleX = target.scaleX;
     found.scaleY = target.scaleY;
+
+    if(moved) dirtyLayout.add(found.id);
   }
 }
 
@@ -522,9 +1058,41 @@ canvas.on('object:modified', (e) => {
 
 
 // Сохранение схемы (отправка бэкенду)
-document.getElementById('saveLayoutBtn').addEventListener('click', () => {
+const saveLayoutBtn = document.getElementById('saveLayoutBtn');
+
+saveLayoutBtn.addEventListener('click', async () => {
   canvas.getObjects().forEach(obj => syncTableData(obj));
-  alert('Схема успешно сохранена!');
+
+  if(dirtyLayout.size === 0) {
+    ui.toast('Схема уже сохранена', 'info');
+
+    return;
+  }
+
+  saveLayoutBtn.disabled = true;
+
+  const ids = [...dirtyLayout];
+  const results = await Promise.allSettled(ids.map(id => {
+    const table = tablesData.find(t => t.id === id);
+
+    return api.request('venue', `/api/v1/tables/${id}`, { method: 'PATCH', body: layoutToApi(table) });
+  }));
+
+  saveLayoutBtn.disabled = false;
+
+  const failed = results.filter(r => r.status === 'rejected');
+  ids.forEach((id, i) => { if(results[i].status === 'fulfilled') dirtyLayout.delete(id); });
+
+  if(failed.length) ui.toast(`Не удалось сохранить ${failed.length} из ${ids.length}: ${failed[0].reason.message}`, 'error');
+  else ui.toast('Схема сохранена', 'success');
+});
+
+// Предупреждение при уходе со страницы с несохранённой схемой
+window.addEventListener('beforeunload', (e) => {
+  if(dirtyLayout.size === 0) return;
+
+  e.preventDefault();
+  e.returnValue = '';
 });
 
 
@@ -535,9 +1103,17 @@ function renderReservations() {
   const tbody = document.getElementById('reservationsTableBody');
   tbody.innerHTML = '';
 
-  const filtered = reservationsData.filter(r => r.date === selectedDate);
+  document.getElementById('printTitle').textContent = `Брони на ${formatDateHuman(selectedDate)}`;
+
+  const query = reservationSearch.value.trim().toLowerCase();
+
+  const filtered = reservationsData
+    .filter(r => r.date === selectedDate && matchesSearch(r, query))
+    .sort((a, b) => a.time.localeCompare(b.time));
+
   if(filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted);">На выбранную дату броней нет</td></tr>`;
+    const emptyText = query ? 'Ничего не найдено' : `На ${formatDateHuman(selectedDate)} броней нет`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-row">${emptyText}</td></tr>`;
 
     return;
   }
@@ -550,31 +1126,33 @@ function renderReservations() {
     tr.style.cursor = 'pointer';
 
     tr.addEventListener('click', (e) => {
-      if (e.target.tagName === 'BUTTON') return; // при нажатии отмены редактирование не вызываем
+      if (e.target.closest('button')) return; // при нажатии отмены (в т.ч. на её иконку) редактирование не вызываем
       openEditModal(res.id);
     });
 
+    const eventInfo = res.eventTitle ? `<br><small style="color:var(--text-muted)">🎉 ${escapeHtml(res.eventTitle)}</small>` : '';
+
     tr.innerHTML = `
-      <td><strong>${res.time}</strong></td>
-      <td>${tableInfo}</td>
-      <td>${res.guestName} <br><small style="color:var(--text-muted)">${res.guestPhone}</small></td>
-      <td>${res.guestsCount} чел</td>
-      <td>${res.totalAmount || 0} сом</td>
-      <td>${res.prepayment} сом</td>
-      <td>
+      <td data-label="Время"><strong>${res.time}</strong>${eventInfo}</td>
+      <td data-label="Стол">${tableInfo}</td>
+      <td data-label="Гость">${escapeHtml(res.guestName)} <br><small style="color:var(--text-muted)">${escapeHtml(res.guestPhone)}</small></td>
+      <td data-label="Гостей">${res.guestsCount} чел</td>
+      <td data-label="Сумма">${res.totalAmount || 0} сом</td>
+      <td data-label="Предоплата">${res.prepayment} сом</td>
+      <td data-label="Оплата">
         <span class="badge ${res.paymentStatus === 'paid' ? 'badge-success' : 'badge-warning'}">
-          ${res.paymentStatus === 'paid' ? 'Оплачено' : 'При входе'}
+          ${res.paymentStatus === 'paid' ? 'Предоплата внесена' : 'Оплата на месте'}
         </span>
       </td>
-      <td>
-        <span class="badge ${res.status === 'active' ? 'badge-success' : 'badge-danger'}">
-          ${res.status === 'active' ? 'Активна' : 'Отменена'}
+      <td data-label="Статус">
+        <span class="badge ${res.apiStatus === 'CONFIRMED' ? 'badge-success' : res.status === 'active' ? 'badge-warning' : 'badge-danger'}">
+          ${BOOKING_STATUS_LABELS[res.apiStatus]}
         </span>
       </td>
-      <td>
+      <td class="cell-actions">
         ${res.status === 'active' ? 
-          `<button class="btn btn-danger" style="padding:4px 8px; font-size:0.75rem;" onclick="cancelReservation('${res.id}')">Отменить</button>` : 
-          `<small title="${res.cancelReason}">${res.cancelReason || 'Отменено'}</small>`
+          `<button class="btn btn-outline-danger btn-sm" onclick="cancelReservation('${res.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>Отменить</button>` : 
+          `<small title="${escapeHtml(res.cancelReason)}">${escapeHtml(res.cancelReason || BOOKING_STATUS_LABELS[res.apiStatus])}</small>`
         }
       </td>
     `;
@@ -585,10 +1163,32 @@ function renderReservations() {
 
 
 
+// Поиск по имени, телефону (по цифрам) или номеру стола
+function matchesSearch(res, query) {
+  if(!query) return true;
+
+  const digits = query.replace(/\D/g, '');
+  const table = tablesData.find(t => t.id === res.tableId);
+
+  return res.guestName.toLowerCase().includes(query)
+    || (digits.length > 0 && res.guestPhone.replace(/\D/g, '').includes(digits))
+    || (table && String(table.number) === query.replace('№', '').trim());
+}
+
+reservationSearch.addEventListener('input', renderReservations);
+
+
+
 // Открытие модального окна редактирования брони
 function openEditModal(resId) {
   const res = reservationsData.find(r => r.id === resId);
   if(!res) return;
+
+  if(res.status !== 'active') {
+    ui.toast('Отменённую или истёкшую бронь изменить нельзя', 'warning');
+
+    return;
+  }
 
   const table = tablesData.find(t => t.id === res.tableId);
 
@@ -597,40 +1197,62 @@ function openEditModal(resId) {
 
   modalFloorSelect.value = table ? table.floor : 1;
   modalDate.value = res.date;
+  modalReservations = null;
 
+  fillEventSelect(res.eventId);
   updateAvailableTablesInModal(res.tableId); // обновляем доступные столики с учетом редактируемого
   modalTableSelect.value = res.tableId; // устанавливаем столик после обновления списка option
 
   document.getElementById('modalTime').value = res.time;
   document.getElementById('modalGuestName').value = res.guestName;
-  document.getElementById('modalGuestPhone').value = res.guestPhone;
+  document.getElementById('modalGuestPhone').value = phoneToLocal(res.guestPhone);
   document.getElementById('modalGuestsCount').value = res.guestsCount;
   document.getElementById('modalTotalAmount').value = res.totalAmount || 0;
   document.getElementById('modalPrepayment').value = res.prepayment;
   document.getElementById('modalPaymentStatus').value = res.paymentStatus;
+  document.getElementById('submitReservationBtn').textContent = 'Сохранить изменения';
+  cancelBookingBtn.classList.remove('hidden');
 
+  checkTableCapacity();
   reservationModal.classList.remove('hidden');
 }
 
 
 
 // Отмена брони с указанием причины
-window.cancelReservation = function(resId) {
-  const reason = prompt('Укажите причину отмены бронирования:');
-  if(reason === null) return; // нажата "отмена"
-
+window.cancelReservation = async function(resId) {
   const res = reservationsData.find(r => r.id === resId);
-  if(res) {
-    res.status = 'cancelled';
-    res.cancelReason = reason || 'Без указания причины';
+  if(!res) return;
 
-    const table = tablesData.find(t => t.id === res.tableId);
-    if(table) table.status = 'free';
+  const reason = await ui.prompt({
+    title: 'Отменить бронь?',
+    message: `${res.guestName}, ${res.time}. Укажите причину отмены:`,
+    options: ['Гость отменил', 'Гость не пришёл', 'Ошибка при записи'],
+    placeholder: 'Своя причина',
+    okText: 'Отменить бронь',
+    cancelText: 'Не отменять',
+    danger: true
+  });
 
-    // автоматическое освобождение статуса "Забронировано", если бронь была на текущую дату
-    renderReservations();
-    updateCanvasColorsByDate();
+  if(reason === null) return; // нажата "не отменять"
+
+  try {
+    await api.request('booking', `/api/v1/bookings/${resId}/cancel`, {
+      method: 'POST',
+      body: { reason: reason || 'Без указания причины' }
+    });
+  } catch (err) {
+    ui.toast(err.message, 'error');
+
+    return;
   }
+
+  // статус столика пересчитывается по броням на выбранную дату (Недоступен / Занят не трогаем)
+  await loadReservations();
+  renderReservations();
+  updateCanvasColorsByDate();
+
+  ui.toast('Бронь отменена', 'success');
 };
 
 
@@ -661,11 +1283,32 @@ function updateCanvasColorsByDate() {
 
   canvas.renderAll();
   updateStats();
+  refreshTableBookingInfo();
 }
 
-dateFilter.addEventListener('change', () => {
+async function onDateChange() {
+  await loadReservations();
   renderReservations();
   updateCanvasColorsByDate();
+}
+
+dateFilter.addEventListener('change', onDateChange);
+
+
+// Стрелки дня и "Сегодня"
+function shiftDate(days) {
+  const date = new Date((dateFilter.value || toLocalDateString(new Date())) + 'T00:00');
+  date.setDate(date.getDate() + days);
+
+  dateFilter.value = toLocalDateString(date);
+  onDateChange();
+}
+
+document.getElementById('prevDayBtn').addEventListener('click', () => shiftDate(-1));
+document.getElementById('nextDayBtn').addEventListener('click', () => shiftDate(1));
+document.getElementById('todayBtn').addEventListener('click', () => {
+  dateFilter.value = toLocalDateString(new Date());
+  onDateChange();
 });
 
 
@@ -682,17 +1325,34 @@ const modalTableSelect = document.getElementById('modalTableSelect');
 const modalDate = document.getElementById('modalDate');
 
 
-openModalBtn.addEventListener('click', () => {
-  document.getElementById('modalTitle').textContent = 'Новое бронирование';
+function openNewReservationModal(table = null) {
+  document.getElementById('modalTitle').textContent = table ? `Бронь стола №${table.number}` : 'Новое бронирование';
   document.getElementById('modalReservationId').value = '';
+  document.getElementById('submitReservationBtn').textContent = 'Забронировать';
+  cancelBookingBtn.classList.add('hidden');
 
   createForm.reset(); // сброс формы, чтобы не было старых данных
 
   modalDate.value = dateFilter.value;
+  modalFloorSelect.value = table ? table.floor : currentFloor;
+  modalReservations = null;
+
+  // если в этот день мероприятие - по умолчанию бронь на него
+  const dayEvents = fillEventSelect();
+  if(dayEvents.length === 1) {
+    modalEventSelect.value = dayEvents[0].id;
+    document.getElementById('modalTime').value = toLocalTime(dayEvents[0].starts_at);
+  }
 
   updateAvailableTablesInModal();
+  if(table) modalTableSelect.value = table.id;
+
+  checkTableCapacity();
   reservationModal.classList.remove('hidden');
-});
+  document.getElementById('modalGuestName').focus();
+}
+
+openModalBtn.addEventListener('click', () => openNewReservationModal());
 
 
 function closeModal() {
@@ -704,10 +1364,79 @@ function closeModal() {
 closeModalBtn.addEventListener('click', closeModal);
 cancelModalBtn.addEventListener('click', closeModal);
 
+// Отмена брони прямо из окна (например, открытой со схемы)
+const cancelBookingBtn = document.getElementById('cancelBookingBtn');
+
+cancelBookingBtn.addEventListener('click', () => {
+  const resId = document.getElementById('modalReservationId').value;
+
+  closeModal();
+  cancelReservation(resId);
+});
+
+
+const modalEventSelect = document.getElementById('modalEventSelect');
+
+// Мероприятия на дату из окна брони (отменённые не предлагаем)
+function fillEventSelect(selectedId = null) {
+  const dayEvents = eventsOnDate(modalDate.value)
+    .filter(ev => ev.status !== 'CANCELLED' || ev.id === selectedId);
+
+  modalEventSelect.innerHTML = '<option value="">Без мероприятия</option>';
+
+  dayEvents.forEach(ev => {
+    const opt = document.createElement('option');
+    opt.value = ev.id;
+    opt.textContent = `${toLocalTime(ev.starts_at)} ${ev.title}${ev.status === 'DRAFT' ? ' (черновик)' : ''}`;
+
+    modalEventSelect.appendChild(opt);
+  });
+
+  modalEventSelect.value = selectedId ? String(selectedId) : '';
+
+  return dayEvents;
+}
+
+// время брони по умолчанию - начало мероприятия
+modalEventSelect.addEventListener('change', () => {
+  const event = eventsData.find(ev => String(ev.id) === modalEventSelect.value);
+  if(event) document.getElementById('modalTime').value = toLocalTime(event.starts_at);
+
+  updateAvailableTablesInModal(currentModalTableId());
+});
+
+// столик редактируемой брони остаётся в списке доступных
+function currentModalTableId() {
+  const resId = document.getElementById('modalReservationId').value;
+  const res = reservationsData.find(r => r.id === resId);
+
+  return res ? res.tableId : null;
+}
+
+// Другая дата в окне брони - загружаем брони на неё для списка свободных столов
+async function onModalDateChange() {
+  const date = modalDate.value;
+
+  fillEventSelect();
+  modalReservations = date === dateFilter.value ? null : [];
+  updateAvailableTablesInModal(currentModalTableId());
+
+  if(date === dateFilter.value || !date) return;
+
+  try {
+    const items = await fetchReservations(date);
+    if(modalDate.value !== date) return;
+
+    modalReservations = items;
+    updateAvailableTablesInModal(currentModalTableId());
+  } catch (err) {
+    ui.toast(`Брони на ${formatDateHuman(date)} не загрузились: ${err.message}`, 'warning');
+  }
+}
 
 // Пересчет доступных столов при изменении этажа или даты (с учетом редактируемого столика)
-modalFloorSelect.addEventListener('change', updateAvailableTablesInModal);
-modalDate.addEventListener('change', updateAvailableTablesInModal);
+modalFloorSelect.addEventListener('change', () => updateAvailableTablesInModal(currentModalTableId()));
+modalDate.addEventListener('change', onModalDateChange);
 
 function updateAvailableTablesInModal(currentTableId = null) {
   const selectedFloor = Number(modalFloorSelect.value);
@@ -717,11 +1446,18 @@ function updateAvailableTablesInModal(currentTableId = null) {
 
   const floorTables = tablesData.filter(t => t.floor === selectedFloor); // все столики текущего этажа
 
+  const dayReservations = modalReservations || reservationsData;
+  const eventId = modalEventSelect.value ? Number(modalEventSelect.value) : null;
+
   // Находим только столики без активной брони на выбранную дату
   const availableTalbes = floorTables.filter(table => {
+    // недоступный стол бронировать нельзя (кроме уже забронированного в редактируемой брони)
+    if(table.status === 'disabled' && table.id !== currentTableId) return false;
+
     // Стол доступен, если на него нет активной брони либо это редактируемый столик
-    const hasBooking = reservationsData.some(r =>
+    const hasBooking = dayReservations.some(r =>
       r.tableId === table.id && r.date === selectedDate && r.status === 'active' && r.id !== document.getElementById('modalReservationId').value
+      && (eventId === null || r.eventId === null || r.eventId === eventId)
     );
 
     return !hasBooking;
@@ -744,14 +1480,14 @@ function updateAvailableTablesInModal(currentTableId = null) {
 
 
 // Отправка формы (создание или обновление брони)
-createForm.addEventListener('submit', (e) => {
+createForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   
   const resId = document.getElementById('modalReservationId').value;
 
   const tableId = modalTableSelect.value;
   if(!tableId) {
-    alert('Выберите свободный столик!');
+    ui.toast('Выберите свободный столик', 'error');
 
     return;
   }
@@ -761,7 +1497,7 @@ createForm.addEventListener('submit', (e) => {
   const prepayment = Number(document.getElementById('modalPrepayment').value) || 0;
 
   if(prepayment > totalAmount && totalAmount > 0) {
-    alert('Предоплата не может превышать общую сумму бронирования!');
+    ui.toast('Предоплата не может быть больше суммы брони', 'error');
 
     return;
   }
@@ -772,48 +1508,59 @@ createForm.addEventListener('submit', (e) => {
     paymentStatus = 'paid';
   }
 
+  const phoneDigits = document.getElementById('modalGuestPhone').value.replace(/\D/g, '');
+  if(phoneDigits.length !== 9) {
+    ui.toast('Введите номер телефона: 9 цифр после +996', 'error');
+    document.getElementById('modalGuestPhone').focus();
 
-  if(resId) {
-    // редактирование существующей брони
-    const res = reservationsData.find(r => r.id === resId);
+    return;
+  }
 
-    if(res) {
-      res.tableId = tableId;
-      res.date = modalDate.value;
-      res.time = document.getElementById('modalTime').value;
-      res.guestName = document.getElementById('modalGuestName').value;
-      res.guestPhone = document.getElementById('modalGuestPhone').value;
-      res.guestsCount = Number(document.getElementById('modalGuestsCount').value);
-      res.totalAmount = totalAmount;
-      res.prepayment = prepayment;
-      res.paymentStatus = paymentStatus;
+  const date = modalDate.value;
+  const time = document.getElementById('modalTime').value;
+  if(!date || !time) {
+    ui.toast('Укажите дату и время', 'error');
+
+    return;
+  }
+
+  const payload = {
+    table_id: Number(tableId),
+    event_id: modalEventSelect.value ? Number(modalEventSelect.value) : null,
+    starts_at: new Date(`${date}T${time}`).toISOString(),
+    guests: Number(document.getElementById('modalGuestsCount').value),
+    guest_name: document.getElementById('modalGuestName').value.trim(),
+    guest_phone: '+996' + phoneDigits,
+    total_amount: totalAmount || null,
+    prepayment: prepayment || null,
+    prepayment_paid: paymentStatus === 'paid'
+  };
+
+  const submitBtn = document.getElementById('submitReservationBtn');
+  submitBtn.disabled = true;
+
+  try {
+    if(resId) {
+      await api.request('booking', `/api/v1/bookings/${resId}`, { method: 'PATCH', body: payload });
+    } else {
+      await api.request('booking', '/api/v1/bookings/admin', { method: 'POST', body: payload });
     }
-  } else {
-    // создание новой брони
-    const newReservation = {
-      id: 'res_' + Date.now(),
-      tableId: tableId,
-      date: modalDate.value,
-      time: document.getElementById('modalTime').value,
-      guestName: document.getElementById('modalGuestName').value,
-      guestPhone: document.getElementById('modalGuestPhone').value,
-      guestsCount: Number(document.getElementById('modalGuestsCount').value),
-      totalAmount: totalAmount,
-      prepayment: prepayment,
-      paymentStatus: paymentStatus,
-      status: 'active',
-      cancelReason: ''
-    };
+  } catch (err) {
+    ui.toast(err.message, 'error');
 
-    reservationsData.push(newReservation);
+    return;
+  } finally {
+    submitBtn.disabled = false;
   }
 
   closeModal();
 
-  renderReservations();
-  updateCanvasColorsByDate();
+  // бронь могли создать на другую дату - показываем её
+  if(date !== dateFilter.value) dateFilter.value = date;
 
-  alert('Бронирование успешно создано!');
+  await onDateChange();
+
+  ui.toast(resId ? 'Изменения брони сохранены' : 'Бронь создана', 'success');
 });
 
 
@@ -828,7 +1575,7 @@ document.getElementById('exportReservationsBtn').addEventListener('click', () =>
   const filtered = reservationsData.filter(r => r.date === selectedDate);
 
   if(filtered.length === 0) {
-    alert('Нет данных для выгрузки');
+    ui.toast('На эту дату нет броней для выгрузки', 'warning');
 
     return;
   }
@@ -857,4 +1604,31 @@ document.getElementById('exportReservationsBtn').addEventListener('click', () =>
 
 
 
-renderFloor(1);
+// Старт: загружаем залы и столы, восстанавливаем этаж и вкладку с прошлого раза
+async function init() {
+  fitCanvasToWrapper();
+
+  const hint = noSelectionText.innerHTML;
+  noSelectionText.textContent = 'Загрузка схемы зала...';
+
+  try {
+    await loadHalls();
+    await loadTables();
+    noSelectionText.innerHTML = hint;
+
+    // без мероприятий брони на обычные вечера всё равно работают
+    await loadEvents().catch(err => ui.toast(`Мероприятия не загрузились: ${err.message}`, 'warning'));
+    await loadReservations();
+  } catch (err) {
+    noSelectionText.textContent = `Не удалось загрузить схему зала: ${err.message}`;
+    ui.toast(err.message, 'error');
+    addTableBtn.disabled = true;
+    saveLayoutBtn.disabled = true;
+  }
+
+  setFloor(loadPreference('hallFloor') === '2' ? 2 : 1);
+
+  if(loadPreference('hallView') === 'reservations') showReservationsView();
+}
+
+init();

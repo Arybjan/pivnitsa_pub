@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="../normalize/normalize.css">
-  <link rel="stylesheet" href="./dashboard.css">
+  <link rel="stylesheet" href="../normalize/normalize.css?v=20261013b">
+  <link rel="stylesheet" href="../ui/ui.css?v=20261013b">
+  <link rel="stylesheet" href="./dashboard.css?v=20261013h">
   <title>Управление залом: Бар Пивница</title>
 
   <!-- FabricJS для геометрического canvas -->
@@ -23,6 +24,14 @@
         <button id="viewCanvasBtn" class="btn-toggle active">Схема зала</button>
         <button id="viewReservationsBtn" class="btn-toggle">Список броней</button>
       </div>
+
+      <!-- Дата, на которую показываются схема и брони (общая для обеих вкладок) -->
+      <div class="date-nav">
+        <button type="button" id="prevDayBtn" class="btn-icon" aria-label="Предыдущий день">&lsaquo;</button>
+        <input type="date" id="reservationDateFilter" aria-label="Дата">
+        <button type="button" id="nextDayBtn" class="btn-icon" aria-label="Следующий день">&rsaquo;</button>
+        <button type="button" id="todayBtn" class="btn-today">Сегодня</button>
+      </div>
     </div>
 
 
@@ -34,6 +43,7 @@
       </div>
 
       <!-- Статистика статусов столиков -->
+      <!-- Легенда и статистика столиков этажа -->
       <div class="stats-bar">
         <div class="stat-item">
           <span class="stat-dot free"></span>
@@ -41,16 +51,24 @@
         </div>
         <div class="stat-item">
           <span class="stat-dot booked"></span>
-          Занято: <strong id="statBookedCount">0</strong>
+          Забронировано: <strong id="statBookedCount">0</strong>
         </div>
         <div class="stat-item">
-          Всего : <strong id="statTotalSeats">0</strong>
+          <span class="stat-dot occupied"></span>
+          Занято: <strong id="statOccupiedCount">0</strong>
+        </div>
+        <div class="stat-item">
+          <span class="stat-dot disabled"></span>
+          Недоступно: <strong id="statDisabledCount">0</strong>
+        </div>
+        <div class="stat-item stat-total">
+          Столов: <strong id="statTotalSeats">0</strong>
         </div>
       </div>
 
       <div class="actions">
-        <button id="addTableBtn" class="btn btn-secondary">+ Добавить стол</button>
-        <button id="saveLayoutBtn" class="btn btn-primary">Сохранить схему</button>
+        <button id="addTableBtn" class="btn btn-secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Добавить стол</button>
+        <button id="saveLayoutBtn" class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>Сохранить схему</button>
       </div>
 
     </div>
@@ -70,7 +88,16 @@
       <h2>Свойства стола</h2>
 
       <div id="noSelectionText" class="info-text">
-        Кликните на стол, чтобы изменить его параметры.
+        Нажмите на стол, чтобы изменить его параметры или забронировать.
+        <br><br>
+        Двойной клик по столу - сразу новая бронь.
+      </div>
+
+      <!-- Бронь выбранного стола на выбранную дату -->
+      <div id="tableBookingInfo" class="booking-info hidden">
+        <div id="tableBookingText"></div>
+        <button type="button" id="openTableBookingBtn" class="btn btn-secondary btn-block hidden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>Открыть бронь</button>
+        <button type="button" id="bookTableBtn" class="btn btn-primary btn-block"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Забронировать стол</button>
       </div>
 
       <form id="tablePropsForm" class="hidden">
@@ -95,7 +122,7 @@
           </select>
         </div>
 
-        <button type="button" id="deleteTableBtn" class="btn btn-danger">Удалить стол</button>
+        <button type="button" id="deleteTableBtn" class="btn btn-outline-danger btn-block"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>Удалить стол</button>
 
       </form>
     </aside>
@@ -107,17 +134,19 @@
   <!-- Список бронирований -->
   <section id="reservationsSection" class="reservations-container hidden">
 
+      <!-- Заголовок только для печати -->
+      <h2 id="printTitle" class="print-title"></h2>
+
       <div class="reservations-toolbar">
         <div class="filter-group">
-          <label for="reservationDateFilter">Дата:</label>
-          <input type="date" id="reservationDateFilter">
+          <input type="search" id="reservationSearch" placeholder="Поиск: имя, телефон или № стола" aria-label="Поиск броней">
         </div>
 
         <div class="toolbar-actions">
-          <button id="openReservationModalBtn" class="btn btn-primary">+ Новая бронь</button>
+          <button id="openReservationModalBtn" class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Новая бронь</button>
 
-          <button id="printReservationsBtn" class="btn btn-secondary">🖨️ Распечатать</button>
-          <button id="exportReservationsBtn" class="btn btn-secondary">📥 Выгрузить</button>
+          <button id="printReservationsBtn" class="btn btn-secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>Распечатать</button>
+          <button id="exportReservationsBtn" class="btn btn-secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg>Выгрузить</button>
         </div>
       </div>
 
@@ -176,6 +205,13 @@
           </div>
 
           <div class="form-group">
+            <label for="modalEventSelect">Мероприятие</label>
+            <select id="modalEventSelect">
+              <option value="">Без мероприятия</option>
+            </select>
+          </div>
+
+          <div class="form-group">
             <label for="modalTime">Время</label>
             <input type="time" id="modalTime" required value="19:00">
           </div>
@@ -187,7 +223,10 @@
           
           <div class="form-group">
             <label for="modalGuestPhone">Телефон</label>
-            <input type="tel" id="modalGuestPhone" placeholder="+996 555 123456" required>
+            <div class="phone-input">
+              <span class="phone-prefix">+996</span>
+              <input type="tel" id="modalGuestPhone" inputmode="numeric" autocomplete="off" placeholder="555 123 456" maxlength="11" required>
+            </div>
           </div>
 
           <div class="form-row">
@@ -212,22 +251,25 @@
           </div>
 
           <div class="form-group">
-            <label for="modalPaymentStatus">Статус оплаты</label>
+            <label for="modalPaymentStatus">Оплата</label>
             <select id="modalPaymentStatus">
-              <option value="unpaid">При входе</option>
-              <option value="paid">Оплачено</option>
+              <option value="unpaid">Оплата на месте</option>
+              <option value="paid">Предоплата внесена</option>
             </select>
           </div>
 
           <div class="modal-footer">
-            <button type="button" id="cancelModalBtn" class="btn btn-secondary">Отмена</button>
-            <button type="submit" class="btn btn-primary">Забронировать</button>
+            <button type="button" id="cancelBookingBtn" class="btn btn-outline-danger hidden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>Отменить бронь</button>
+            <button type="button" id="cancelModalBtn" class="btn btn-secondary">Закрыть</button>
+            <button type="submit" id="submitReservationBtn" class="btn btn-primary">Забронировать</button>
           </div>
 
         </form>
       </div>
     </div>
+  <script src="../ui/ui.js?v=20261013b"></script>
+  <script src="../api/api.js?v=20261013b"></script>
 
-  <script src="./dashboard.js"></script>
+  <script src="./dashboard.js?v=20261013m"></script>
 </body>
 </html>
