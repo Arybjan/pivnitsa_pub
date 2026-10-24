@@ -2,15 +2,31 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.models.booking import BookingStatus
 
 
 class BookingCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     table_id: int
     event_id: int
     guests: int = Field(gt=0)
+    # Пожелание гостя. null, пустая строка и одни пробелы - без комментария
+    comment: str | None = Field(default=None, max_length=500)
+
+    @field_validator("comment")
+    @classmethod
+    def empty_comment_to_none(cls, value: str | None) -> str | None:
+        return value or None
 
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]
@@ -80,6 +96,8 @@ class BookingResponse(BaseModel):
     id: int
     user_id: int
     table_id: int
+    # Номер стола из Venue Service; null, если стол удалён или Venue недоступен
+    table_number: int | None = None
     event_id: int | None
     starts_at: datetime | None
     booking_date: date | None
@@ -90,6 +108,7 @@ class BookingResponse(BaseModel):
     prepayment: Decimal | None
     prepayment_paid: bool
     cancel_reason: str | None
+    comment: str | None
     source: str
     status: BookingStatus
     expires_at: datetime

@@ -60,6 +60,10 @@ class Booking(Base):
         ),
     )
 
+    # Номер стола хранится в Venue Service (своя база), подставляется в ответ
+    # через attach_table_numbers. Не колонка: номер может поменять владелец.
+    table_number = None
+
     id: Mapped[int] = mapped_column(
         BigInteger,
         primary_key=True
@@ -128,6 +132,12 @@ class Booking(Base):
     )
 
     cancel_reason: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True
+    )
+
+    # Пожелание гостя к брони
+    comment: Mapped[str | None] = mapped_column(
         String(500),
         nullable=True
     )

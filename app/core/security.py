@@ -31,7 +31,11 @@ def get_token_payload(
 
         user_id = payload.get("sub")
 
-        if user_id is None:
+        # Тем же секретом Auth подписывает и служебные токены:
+        # пользователем считаем только владельца access token
+        token_type = payload.get("token_type", payload.get("type"))
+
+        if user_id is None or token_type != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token",
@@ -39,13 +43,19 @@ def get_token_payload(
 
         int(user_id)
 
-        return payload
-
     except (JWTError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
         )
+
+    if payload.get("is_active", True) is not True:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive",
+        )
+
+    return payload
 
 
 def get_current_user(

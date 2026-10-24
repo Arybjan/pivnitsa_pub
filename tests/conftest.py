@@ -74,13 +74,18 @@ def client():
     return TestClient(app)
 
 
-def make_token(user_id: int, role: str = "user") -> dict:
+def make_token(user_id: int, role: str = "user", **claims) -> dict:
     payload = {
         "sub": str(user_id),
         "role": role,
         "phone": "+996555000111",
+        "type": "access",
+        "token_type": "access",
         "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        **claims,
     }
+    # None в claims убирает поле из токена
+    payload = {key: value for key, value in payload.items() if value is not None}
     token = jwt.encode(payload, os.environ["JWT_SECRET"], algorithm="HS256")
     return {"Authorization": f"Bearer {token}"}
 

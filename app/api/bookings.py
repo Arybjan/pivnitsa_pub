@@ -18,7 +18,7 @@ from app.schemas.booking import (
     BookingCreate,
     BookingResponse,
 )
-from app.services.booking_service import BookingService
+from app.services.booking_service import BookingService, attach_table_numbers
 from app.services.event_client import EventNotBookable, EventServiceUnavailable
 
 
@@ -41,7 +41,7 @@ def create_booking(
     service = BookingService(db)
 
     try:
-        return service.create_booking(
+        booking = service.create_booking(
             user_id=int(token["sub"]),
             phone=token.get("phone"),
             data=data,
@@ -65,6 +65,9 @@ def create_booking(
             detail=str(exc),
         )
 
+    return attach_table_numbers([booking])[0]
+
+
 @router.get(
     "",
     response_model=list[BookingResponse],
@@ -85,7 +88,7 @@ def list_bookings(
     Брони на мероприятия ищутся по event_id, брони на дату - по date_from/date_to
     (дата по местному времени заведения).
     """
-    return BookingService(db).list_bookings(
+    bookings = BookingService(db).list_bookings(
         event_ids=event_id,
         date_from=date_from,
         date_to=date_to,
@@ -94,6 +97,8 @@ def list_bookings(
         limit=limit,
         offset=offset,
     )
+
+    return attach_table_numbers(bookings)
 
 
 @router.post(
@@ -107,12 +112,14 @@ def create_admin_booking(
     admin_id: int = Depends(require_admin),
 ):
     try:
-        return BookingService(db).create_admin_booking(admin_id, data)
+        booking = BookingService(db).create_admin_booking(admin_id, data)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         )
+
+    return attach_table_numbers([booking])[0]
 
 
 @router.patch(
@@ -139,7 +146,7 @@ def update_admin_booking(
             detail="Booking not found",
         )
 
-    return booking
+    return attach_table_numbers([booking])[0]
 
 
 @router.get(
@@ -152,7 +159,7 @@ def get_my_bookings(
 ):
     service = BookingService(db)
 
-    return service.get_user_bookings(user_id)
+    return attach_table_numbers(service.get_user_bookings(user_id))
 
 
 @router.get(
@@ -180,7 +187,7 @@ def get_booking(
             detail="You do not have access to this booking",
         )
 
-    return booking
+    return attach_table_numbers([booking])[0]
 
 
 @router.post(
@@ -209,7 +216,7 @@ def confirm_booking(
             detail="Booking not found",
         )
 
-    return booking
+    return attach_table_numbers([booking])[0]
 
 
 @router.post(
@@ -244,4 +251,4 @@ def cancel_booking(
             detail="Booking not found",
         )
 
-    return booking
+    return attach_table_numbers([booking])[0]
