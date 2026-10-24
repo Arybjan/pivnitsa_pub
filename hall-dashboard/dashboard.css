@@ -998,3 +998,40 @@ input, select {
 
   border-right: 1px solid var(--border-color);
 }
+
+/* Комментарий гостя к брони */
+.reservation-comment {
+  /* переносится и обрезается до двух строк: однострочный nowrap растягивал карточку на телефоне */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-width: 260px;
+
+  overflow: hidden;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.booking-comment {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+
+  background-color: var(--card-bg);
+
+  font-size: 0.9rem;
+  line-height: 1.4;
+
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+
+  & p {
+    margin: 4px 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}
+
+.booking-comment-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}

@@ -115,6 +115,19 @@ function formatPhone(phone) {
   return digits.length === 12 && digits.startsWith('996') ? `+996 ${formatLocalPhone(digits.slice(3))}` : (phone || '');
 }
 
+// "1500.00" -> "1 500", "1500.50" -> "1 500,50"
+function formatPrice(price) {
+  const value = Number(price);
+  const digits = Number.isInteger(value) ? 0 : 2;
+
+  return value.toLocaleString('ru-RU', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+// Значение для поля ввода: "1500.00" -> "1500", "1500.50" -> "1500.5", null -> ""
+function priceInputValue(price) {
+  return price === null || price === undefined ? '' : String(Number(price));
+}
+
 // "ЧЧ:ММ" по местному времени
 function toLocalTime(iso) {
   const date = new Date(iso);
@@ -148,7 +161,10 @@ function reservationFromApi(b) {
     status: ACTIVE_BOOKING.includes(b.status) ? 'active' : 'cancelled',
     apiStatus: b.status,
     source: b.source,
-    cancelReason: b.cancel_reason || ''
+    cancelReason: b.cancel_reason || '',
+    comment: b.comment || '',
+    // номер из Booking (через Venue) - остаётся и у удалённого стола
+    tableNumber: b.table_number ?? null
   };
 }
 
@@ -213,6 +229,7 @@ function tableFromApi(t) {
     floor: floorOfHall(t.hall_id),
     number: String(t.number),
     capacity: t.capacity,
+    price: t.price ?? null,
     // недоступен и занят хранятся на сервере, свободен / забронирован считается по броням
     status: t.status === 'UNAVAILABLE' ? 'disabled' : t.occupied ? 'occupied' : 'free',
     x: t.x * HALL_WIDTH,
@@ -221,7 +238,7 @@ function tableFromApi(t) {
     scaleY: t.height ? t.height * HALL_HEIGHT / TABLE_HEIGHT : 1,
 
     // последнее сохранённое на сервере - для отката при ошибке
-    saved: { number: String(t.number), capacity: t.capacity, disabled: t.status === 'UNAVAILABLE', occupied: t.occupied }
+    saved: { number: String(t.number), capacity: t.capacity, price: t.price ?? null, disabled: t.status === 'UNAVAILABLE', occupied: t.occupied }
   };
 }
 
@@ -277,6 +294,7 @@ const tablePropsForm = document.getElementById('tablePropsForm');
 const propNumber = document.getElementById('propNumber');
 const propCapacity = document.getElementById('propCapacity');
 const propStatus = document.getElementById('propStatus');
+const propPrice = document.getElementById('propPrice');
 
 const viewCanvasBtn = document.getElementById('viewCanvasBtn');
 const viewReservationsBtn = document.getElementById('viewReservationsBtn');
@@ -500,6 +518,7 @@ function handleSelection(e) {
 
     propNumber.value = data.number;
     propCapacity.value = data.capacity;
+    propPrice.value = priceInputValue(data.price);
     propStatus.value = data.status;
 
     noSelectionText.classList.add('hidden');
@@ -662,6 +681,18 @@ async function persistTableProps() {
 
   if(data.capacity !== saved.capacity) patch.capacity = data.capacity;
 
+  // пустое поле - цена не задана (null)
+  const priceText = propPrice.value.trim();
+  const price = priceText === '' ? null : Number(priceText);
+  if(price !== null && !/^\d{1,10}(\.\d{1,2})?$/.test(priceText)) {
+    ui.toast('Цена - неотрицательное число, не больше двух знаков после запятой', 'error');
+    revertTableProps(activeObject);
+
+    return;
+  }
+  data.price = price === null ? null : price.toFixed(2);
+  if(data.price !== saved.price) patch.price = data.price;
+
   // "Недоступен" - статус стола, "Занят" - отметка "гости за столом"
   const disabled = data.status === 'disabled';
   const occupied = data.status === 'occupied';
@@ -681,6 +712,11 @@ async function persistTableProps() {
 
   saved.number = data.number;
   saved.capacity = data.capacity;
+  saved.price = data.price;
+
+  // список столов (выбор стола в брони) берёт цену отсюда
+  const found = tablesData.find(t => t.id === data.id);
+  if(found) found.price = data.price;
   saved.disabled = disabled;
   saved.occupied = occupied;
 }
@@ -692,16 +728,18 @@ function revertTableProps(obj) {
 
   data.number = data.saved.number;
   data.capacity = data.saved.capacity;
+  data.price = data.saved.price;
   if(data.saved.disabled) data.status = 'disabled';
   else if(data.saved.occupied) data.status = 'occupied';
   else if(data.status === 'disabled' || data.status === 'occupied') data.status = 'free';
 
-  if(found) Object.assign(found, { number: data.number, capacity: data.capacity, status: data.status });
+  if(found) Object.assign(found, { number: data.number, capacity: data.capacity, price: data.price, status: data.status });
 
   // панель показывает этот стол, только если он всё ещё выбран
   if(canvas.getActiveObject() === obj) {
     propNumber.value = data.number;
     propCapacity.value = data.capacity;
+    propPrice.value = priceInputValue(data.price);
     propStatus.value = data.status;
   }
 
@@ -716,6 +754,10 @@ propStatus.addEventListener('change', updateActiveTable);
 propNumber.addEventListener('change', persistTableProps);
 propCapacity.addEventListener('change', persistTableProps);
 propStatus.addEventListener('change', persistTableProps);
+propPrice.addEventListener('change', () => {
+  editedTableObject = canvas.getActiveObject();
+  persistTableProps();
+});
 
 
 
@@ -1120,7 +1162,9 @@ function renderReservations() {
 
   filtered.forEach(res => {
     const table = tablesData.find(t => t.id === res.tableId); // поиск забронированного столика, чтобы узнать его номер и этаж
-    const tableInfo = table ? `Стол №${table.number} (${table.floor} эт.)` : 'Удален';
+    const tableInfo = table
+      ? `Стол №${table.number} (${table.floor} эт.)`
+      : res.tableNumber ? `Стол №${res.tableNumber} (удалён)` : 'Удален';
 
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
@@ -1135,7 +1179,7 @@ function renderReservations() {
     tr.innerHTML = `
       <td data-label="Время"><strong>${res.time}</strong>${eventInfo}</td>
       <td data-label="Стол">${tableInfo}</td>
-      <td data-label="Гость">${escapeHtml(res.guestName)} <br><small style="color:var(--text-muted)">${escapeHtml(res.guestPhone)}</small></td>
+      <td data-label="Гость">${escapeHtml(res.guestName)} <br><small style="color:var(--text-muted)">${escapeHtml(res.guestPhone)}</small>${res.comment ? `<br><small class="reservation-comment" title="${escapeHtml(res.comment)}">💬 ${escapeHtml(res.comment)}</small>` : ''}</td>
       <td data-label="Гостей">${res.guestsCount} чел</td>
       <td data-label="Сумма">${res.totalAmount || 0} сом</td>
       <td data-label="Предоплата">${res.prepayment} сом</td>
@@ -1172,7 +1216,7 @@ function matchesSearch(res, query) {
 
   return res.guestName.toLowerCase().includes(query)
     || (digits.length > 0 && res.guestPhone.replace(/\D/g, '').includes(digits))
-    || (table && String(table.number) === query.replace('№', '').trim());
+    || String(table ? table.number : res.tableNumber) === query.replace('№', '').trim();
 }
 
 reservationSearch.addEventListener('input', renderReservations);
@@ -1210,6 +1254,7 @@ function openEditModal(resId) {
   document.getElementById('modalTotalAmount').value = res.totalAmount || 0;
   document.getElementById('modalPrepayment').value = res.prepayment;
   document.getElementById('modalPaymentStatus').value = res.paymentStatus;
+  showModalComment(res.comment);
   document.getElementById('submitReservationBtn').textContent = 'Сохранить изменения';
   cancelBookingBtn.classList.remove('hidden');
 
@@ -1325,6 +1370,13 @@ const modalTableSelect = document.getElementById('modalTableSelect');
 const modalDate = document.getElementById('modalDate');
 
 
+// Комментарий оставляет гость в приложении, в админке он только для чтения
+function showModalComment(comment) {
+  document.getElementById('modalCommentText').textContent = comment;
+  document.getElementById('modalComment').classList.toggle('hidden', !comment);
+}
+
+
 function openNewReservationModal(table = null) {
   document.getElementById('modalTitle').textContent = table ? `Бронь стола №${table.number}` : 'Новое бронирование';
   document.getElementById('modalReservationId').value = '';
@@ -1332,6 +1384,7 @@ function openNewReservationModal(table = null) {
   cancelBookingBtn.classList.add('hidden');
 
   createForm.reset(); // сброс формы, чтобы не было старых данных
+  showModalComment('');
 
   modalDate.value = dateFilter.value;
   modalFloorSelect.value = table ? table.floor : currentFloor;
@@ -1472,7 +1525,7 @@ function updateAvailableTablesInModal(currentTableId = null) {
   availableTalbes.forEach(table => {
     const opt = document.createElement('option');
     opt.value = table.id;
-    opt.textContent = `Стол №${table.number} (${table.capacity} мест)`;
+    opt.textContent = `Стол №${table.number} (${table.capacity} мест${table.price !== null ? `, ${formatPrice(table.price)} сом` : ''})`;
 
     modalTableSelect.appendChild(opt);
   });
@@ -1583,7 +1636,7 @@ document.getElementById('exportReservationsBtn').addEventListener('click', () =>
   let csvContent = "\uFEFFВремя;Стол;Гость;Телефон;Гостей;Предоплата;Статус\n";
   filtered.forEach(r => {
     const table = tablesData.find(t => t.id === r.tableId);
-    const tableNum = table ? table.number : '-';
+    const tableNum = table ? table.number : r.tableNumber ?? '-';
 
     csvContent += `${r.time};Стол №${tableNum};${r.guestName};${r.guestPhone};${r.guestsCount};${r.prepayment};${r.status}\n`;
   });

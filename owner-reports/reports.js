@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return {
           date: b.booking_date || (startsAt ? toLocalDateString(new Date(startsAt)) : ''),
           time: startsAt ? toLocalTime(startsAt) : '',
-          table: table ? `Стол №${table.number}${floor ? ` (${floor} эт.)` : ''}` : 'Стол удалён',
+          table: table ? `Стол №${table.number}${floor ? ` (${floor} эт.)` : ''}` : b.table_number ? `Стол №${b.table_number} (удалён)` : 'Стол удалён',
           event: event ? event.title : '',
           guest: b.guest_name || 'Гость из приложения',
           count: b.guests,
