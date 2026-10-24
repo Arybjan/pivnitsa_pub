@@ -65,6 +65,8 @@ services:
       SMS_PROVIDER: ${SMS_PROVIDER:-console}
       OTP_EXPOSE_IN_RESPONSE: ${OTP_EXPOSE_IN_RESPONSE:-true}
       NOTIFICATION_SERVICE_URL: http://notification:8000
+      # вход из Telegram Mini App (пусто - выключен)
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       CORS_ORIGINS: '["*"]'
     depends_on:
       <<: *depends-db
@@ -112,7 +114,7 @@ services:
       VENUE_TIMEZONE: Asia/Bishkek
       # дата мероприятия для брони из приложения
       EVENT_SERVICE_URL: http://event:8001
-      # номера столов (table_number) в ответах о бронях
+      # номера столов (table_number) в ответах; без Venue номер будет null
       VENUE_SERVICE_URL: http://venue:8000
       CORS_ORIGINS: "*"
     depends_on:
