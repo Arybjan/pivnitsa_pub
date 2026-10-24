@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import AwareDatetime
+from pydantic import AwareDatetime, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -106,10 +106,16 @@ def list_tables(
     db: Database,
     hall_id: Annotated[int | None, Query(gt=0)] = None,
     min_capacity: Annotated[int | None, Query(gt=0)] = None,
+    # Пакетная выборка по ID (Booking берёт номера столов одним запросом)
+    table_id: Annotated[
+        list[Annotated[int, Field(gt=0)]] | None, Query(alias="id", max_length=200)
+    ] = None,
     offset: Offset = 0,
     limit: Limit = 100,
 ):
-    return VenueService(db).list_tables(hall_id, min_capacity, offset, limit)
+    return VenueService(db).list_tables(
+        hall_id, min_capacity, offset, limit, table_ids=table_id
+    )
 
 
 @router.post("/tables", response_model=TableRead, status_code=201, tags=["Tables"])

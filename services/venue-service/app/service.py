@@ -89,8 +89,11 @@ class VenueService:
         min_capacity: int | None = None,
         offset: int = 0,
         limit: int | None = 100,
+        table_ids: list[int] | None = None,
     ) -> list[Table]:
         query = select(Table).where(Table.deleted_at.is_(None))
+        if table_ids:
+            query = query.where(Table.id.in_(table_ids))
         if hall_id is not None:
             self.get_hall(hall_id)
             query = query.where(Table.hall_id == hall_id)

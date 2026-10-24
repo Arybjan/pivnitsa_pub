@@ -188,6 +188,25 @@ def test_invalid_table_price(client, admin, hall, table, price):
     assert response.status_code == 422
 
 
+def test_list_tables_by_ids(client, admin, hall, table):
+    payload = {"hall_id": hall["id"], "capacity": 2, "x": 0, "y": 0}
+    second = client.post(
+        "/api/v1/tables", headers=admin, json={**payload, "number": 7}
+    ).json()
+    client.post("/api/v1/tables", headers=admin, json={**payload, "number": 8})
+    response = client.get(
+        "/api/v1/tables", params={"id": [second["id"], table["id"], 999]}
+    )
+    assert response.status_code == 200
+    assert [(item["id"], item["number"]) for item in response.json()] == [
+        (table["id"], 1),
+        (second["id"], 7),
+    ]
+    assert client.get("/api/v1/tables", params={"id": 0}).status_code == 422
+    too_many = client.get("/api/v1/tables", params={"id": list(range(1, 202))})
+    assert too_many.status_code == 422
+
+
 def test_number_unique_in_hall_and_filters(client, admin, table):
     payload = {"hall_id": table["hall_id"], "number": 1, "capacity": 6, "x": 0, "y": 0}
     assert client.post("/api/v1/tables", json=payload, headers=admin).status_code == 409
