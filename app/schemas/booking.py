@@ -20,12 +20,12 @@ class BookingCreate(BaseModel):
     table_id: int
     event_id: int
     guests: int = Field(gt=0)
-    # Пожелание гостя. null, пустая строка и одни пробелы - без комментария
     comment: str | None = Field(default=None, max_length=500)
 
     @field_validator("comment")
     @classmethod
     def empty_comment_to_none(cls, value: str | None) -> str | None:
+        # Пустой комментарий не храним: "" и пробелы равнозначны его отсутствию
         return value or None
 
 
@@ -96,7 +96,7 @@ class BookingResponse(BaseModel):
     id: int
     user_id: int
     table_id: int
-    # Номер стола из Venue Service; null, если стол удалён или Venue недоступен
+    # Номер стола из Venue Service; null, если стол не найден или Venue недоступен
     table_number: int | None = None
     event_id: int | None
     starts_at: datetime | None
@@ -107,8 +107,8 @@ class BookingResponse(BaseModel):
     total_amount: Decimal | None
     prepayment: Decimal | None
     prepayment_paid: bool
+    comment: str | None = None
     cancel_reason: str | None
-    comment: str | None
     source: str
     status: BookingStatus
     expires_at: datetime

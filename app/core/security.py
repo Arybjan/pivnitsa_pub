@@ -5,7 +5,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 
 load_dotenv()
-security = HTTPBearer()
+# auto_error=False: без заголовка отвечаем 401, а не 403 как HTTPBearer по умолчанию
+security = HTTPBearer(auto_error=False)
 
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
@@ -15,39 +16,37 @@ ADMIN_ROLES = ("admin", "owner")
 
 
 def get_token_payload(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict:
+    """Проверенный access token. Пользователь определяется только по его sub."""
 
-    token = credentials.credentials
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    if credentials is None:
+        raise unauthorized
 
     try:
         payload = jwt.decode(
-            token,
+            credentials.credentials,
             JWT_SECRET,
             algorithms=[JWT_ALGORITHM],
             # Срок действия проверяется всегда, а токен без exp не принимаем вовсе.
             options={"require_exp": True},
         )
+        user_id = int(payload.get("sub"))
+    except (JWTError, ValueError, TypeError):
+        raise unauthorized
 
-        user_id = payload.get("sub")
+    if user_id <= 0:
+        raise unauthorized
 
-        # Тем же секретом Auth подписывает и служебные токены:
-        # пользователем считаем только владельца access token
-        token_type = payload.get("token_type", payload.get("type"))
-
-        if user_id is None or token_type != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-            )
-
-        int(user_id)
-
-    except (JWTError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
+    # Auth кладёт тип в оба поля; refresh и service-токены здесь не принимаем
+    if payload.get("token_type", payload.get("type")) != "access":
+        raise unauthorized
 
     if payload.get("is_active", True) is not True:
         raise HTTPException(

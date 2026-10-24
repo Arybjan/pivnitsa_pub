@@ -6,38 +6,30 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# Venue Service: номера столов для ответов API. Пусто - номера не подставляются
+# Venue Service: номера столов для ответов. Пусто - номера не подставляются
 VENUE_SERVICE_URL = os.getenv("VENUE_SERVICE_URL", "")
-
-# Venue отдаёт до 200 столов за запрос
-BATCH_SIZE = 200
+VENUE_SERVICE_TIMEOUT = float(os.getenv("VENUE_SERVICE_TIMEOUT", "3"))
 
 
-def get_table_numbers(table_ids: list[int]) -> dict[int, int]:
-    """Номера столов по ID одним запросом на каждые BATCH_SIZE столов.
+def get_table_numbers(table_ids: set[int]) -> dict[int, int]:
+    """Номера столов {table_id: number} одним запросом к Venue Service.
 
-    Номер нужен только для отображения, поэтому недоступный Venue Service
-    не ломает ответ: для таких столов номер просто не возвращается.
-    Удалённых столов Venue не отдаёт - у них номера тоже не будет.
+    Столы хранятся в другом сервисе и другой БД, поэтому номер берётся
+    пакетным запросом на весь ответ, а не по одному на бронь.
+    Если Venue недоступен или стол не найден, номера для него нет:
+    бронь всё равно отдаётся, просто с table_number = null.
     """
-    unique_ids = list(dict.fromkeys(table_ids))
-    if not VENUE_SERVICE_URL or not unique_ids:
+    if not VENUE_SERVICE_URL or not table_ids:
         return {}
 
-    numbers: dict[int, int] = {}
-    for start in range(0, len(unique_ids), BATCH_SIZE):
-        chunk = unique_ids[start:start + BATCH_SIZE]
-        params = [("id", table_id) for table_id in chunk] + [("limit", BATCH_SIZE)]
-        try:
-            response = httpx.get(
-                f"{VENUE_SERVICE_URL}/api/v1/tables",
-                params=params,
-                timeout=3.0,
-            )
-            response.raise_for_status()
-            numbers.update({table["id"]: table["number"] for table in response.json()})
-        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
-            logger.warning("Venue Service table lookup failed: %s", exc)
-            break
-
-    return numbers
+    try:
+        response = httpx.get(
+            f"{VENUE_SERVICE_URL}/api/v1/tables/numbers",
+            params=[("id", table_id) for table_id in sorted(table_ids)],
+            timeout=VENUE_SERVICE_TIMEOUT,
+        )
+        response.raise_for_status()
+        return {item["id"]: item["number"] for item in response.json()}
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        logger.warning("Table numbers are unavailable: %s", exc)
+        return {}

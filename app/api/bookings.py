@@ -18,14 +18,31 @@ from app.schemas.booking import (
     BookingCreate,
     BookingResponse,
 )
-from app.services.booking_service import BookingService, attach_table_numbers
+from app.services.booking_service import BookingService
+from app.models.booking import Booking
 from app.services.event_client import EventNotBookable, EventServiceUnavailable
+from app.services.venue_client import get_table_numbers
 
 
 router = APIRouter(
     prefix="/api/v1/bookings",
     tags=["Bookings"],
 )
+
+
+def to_responses(bookings: list[Booking]) -> list[BookingResponse]:
+    """Брони с номерами столов: один запрос к Venue на весь ответ, без N+1."""
+    numbers = get_table_numbers({booking.table_id for booking in bookings})
+    return [
+        BookingResponse.model_validate(booking).model_copy(
+            update={"table_number": numbers.get(booking.table_id)}
+        )
+        for booking in bookings
+    ]
+
+
+def to_response(booking: Booking) -> BookingResponse:
+    return to_responses([booking])[0]
 
 
 @router.post(
@@ -65,8 +82,7 @@ def create_booking(
             detail=str(exc),
         )
 
-    return attach_table_numbers([booking])[0]
-
+    return to_response(booking)
 
 @router.get(
     "",
@@ -88,7 +104,7 @@ def list_bookings(
     Брони на мероприятия ищутся по event_id, брони на дату - по date_from/date_to
     (дата по местному времени заведения).
     """
-    bookings = BookingService(db).list_bookings(
+    return to_responses(BookingService(db).list_bookings(
         event_ids=event_id,
         date_from=date_from,
         date_to=date_to,
@@ -96,9 +112,7 @@ def list_bookings(
         active_only=active,
         limit=limit,
         offset=offset,
-    )
-
-    return attach_table_numbers(bookings)
+    ))
 
 
 @router.post(
@@ -119,7 +133,7 @@ def create_admin_booking(
             detail=str(exc),
         )
 
-    return attach_table_numbers([booking])[0]
+    return to_response(booking)
 
 
 @router.patch(
@@ -146,7 +160,7 @@ def update_admin_booking(
             detail="Booking not found",
         )
 
-    return attach_table_numbers([booking])[0]
+    return to_response(booking)
 
 
 @router.get(
@@ -159,7 +173,7 @@ def get_my_bookings(
 ):
     service = BookingService(db)
 
-    return attach_table_numbers(service.get_user_bookings(user_id))
+    return to_responses(service.get_user_bookings(user_id))
 
 
 @router.get(
@@ -187,7 +201,7 @@ def get_booking(
             detail="You do not have access to this booking",
         )
 
-    return attach_table_numbers([booking])[0]
+    return to_response(booking)
 
 
 @router.post(
@@ -216,7 +230,7 @@ def confirm_booking(
             detail="Booking not found",
         )
 
-    return attach_table_numbers([booking])[0]
+    return to_response(booking)
 
 
 @router.post(
@@ -251,4 +265,4 @@ def cancel_booking(
             detail="Booking not found",
         )
 
-    return attach_table_numbers([booking])[0]
+    return to_response(booking)

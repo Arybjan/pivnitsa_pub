@@ -81,11 +81,10 @@ def make_token(user_id: int, role: str = "user", **claims) -> dict:
         "phone": "+996555000111",
         "type": "access",
         "token_type": "access",
+        "is_active": True,
         "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         **claims,
     }
-    # None в claims убирает поле из токена
-    payload = {key: value for key, value in payload.items() if value is not None}
     token = jwt.encode(payload, os.environ["JWT_SECRET"], algorithm="HS256")
     return {"Authorization": f"Bearer {token}"}
 

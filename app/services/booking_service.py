@@ -10,7 +10,6 @@ from app.messaging.publisher import BookingEventPublisher, booking_payload, publ
 from app.models.booking import ACTIVE_STATUSES, Booking, BookingSource, BookingStatus
 from app.repositories.booking_repository import BookingRepository
 from app.services.event_client import get_bookable_event_start
-from app.services.venue_client import get_table_numbers
 from app.schemas.booking import (
     AdminBookingCreate,
     AdminBookingUpdate,
@@ -30,14 +29,6 @@ VENUE_TIMEZONE = ZoneInfo(os.getenv("VENUE_TIMEZONE", "Asia/Bishkek"))
 
 def local_date(moment: datetime) -> date:
     return moment.astimezone(VENUE_TIMEZONE).date()
-
-
-def attach_table_numbers(bookings: list[Booking]) -> list[Booking]:
-    """Подставляет номера столов одним запросом к Venue на весь список."""
-    numbers = get_table_numbers([booking.table_id for booking in bookings])
-    for booking in bookings:
-        booking.table_number = numbers.get(booking.table_id)
-    return bookings
 
 
 class BookingService:
