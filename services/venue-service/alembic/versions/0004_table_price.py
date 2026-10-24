@@ -9,9 +9,9 @@ depends_on = None
 
 
 def upgrade():
-    # Существующие столы получают NULL - цена не задана, данные не теряются
+    # Существующие столы остаются без цены (NULL), данные не меняются
     with op.batch_alter_table("venue_tables") as batch:
-        batch.add_column(sa.Column("price", sa.Numeric(10, 2)))
+        batch.add_column(sa.Column("price", sa.Numeric(12, 2)))
         batch.create_check_constraint("ck_table_price", "price IS NULL OR price >= 0")
 
 

@@ -22,9 +22,9 @@ Size = Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)]
 Name = Annotated[str, Field(min_length=1, max_length=100)]
 Description = Annotated[str, Field(max_length=2000)]
 ImageUrl = Annotated[HttpUrl, Field(max_length=2048)]
-# Деньги: Decimal без ошибок округления, совпадает с Numeric(10, 2) в БД
+# Деньги в сомах, без ошибок округления float
 Price = Annotated[
-    Decimal, Field(ge=0, max_digits=10, decimal_places=2, allow_inf_nan=False)
+    Decimal, Field(ge=0, max_digits=12, decimal_places=2, allow_inf_nan=False)
 ]
 
 
@@ -92,10 +92,10 @@ class TableCreate(Input):
     width: Size | None = None
     height: Size | None = None
     description: Description = ""
+    price: Price | None = None
     status: TableStatus = TableStatus.ACTIVE
     # Гости сейчас за столом (отметка смены, на доступность брони не влияет)
     occupied: bool = False
-    price: Price | None = None
 
 
 class TableUpdate(Patch):
@@ -109,9 +109,9 @@ class TableUpdate(Patch):
     width: Size | None = None
     height: Size | None = None
     description: Description | None = None
+    price: Price | None = None
     status: TableStatus | None = None
     occupied: bool | None = None
-    price: Price | None = None
 
 
 class TableRead(ReadModel):
@@ -125,11 +125,16 @@ class TableRead(ReadModel):
     width: float | None
     height: float | None
     description: str
+    price: Decimal | None
     status: TableStatus
     occupied: bool
-    price: Decimal | None
     created_at: datetime
     updated_at: datetime
+
+
+class TableNumber(ReadModel):
+    id: int
+    number: int
 
 
 class Interval(Input):

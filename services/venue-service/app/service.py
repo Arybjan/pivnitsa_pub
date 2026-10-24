@@ -89,11 +89,8 @@ class VenueService:
         min_capacity: int | None = None,
         offset: int = 0,
         limit: int | None = 100,
-        table_ids: list[int] | None = None,
     ) -> list[Table]:
         query = select(Table).where(Table.deleted_at.is_(None))
-        if table_ids:
-            query = query.where(Table.id.in_(table_ids))
         if hall_id is not None:
             self.get_hall(hall_id)
             query = query.where(Table.hall_id == hall_id)
@@ -103,6 +100,16 @@ class VenueService:
         if limit is not None:
             query = query.limit(limit)
         return list(self.db.scalars(query))
+
+    def table_numbers(self, table_ids: list[int]) -> list[Table]:
+        # Удалённые столы тоже: номер нужен для истории бронирований
+        return list(
+            self.db.scalars(
+                select(Table)
+                .where(Table.id.in_(dict.fromkeys(table_ids)))
+                .order_by(Table.id)
+            )
+        )
 
     def create_table(self, data: TableCreate) -> Table:
         self.get_hall(data.hall_id, lock=True)

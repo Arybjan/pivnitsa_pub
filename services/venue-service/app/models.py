@@ -94,8 +94,8 @@ class Table(TimestampMixin, Base):
             " AND (height IS NULL OR (height > 0 AND height <= 1))",
             name="ck_table_size",
         ),
-        CheckConstraint("status IN ('ACTIVE', 'UNAVAILABLE')", name="ck_table_status"),
         CheckConstraint("price IS NULL OR price >= 0", name="ck_table_price"),
+        CheckConstraint("status IN ('ACTIVE', 'UNAVAILABLE')", name="ck_table_status"),
         Index(
             "uq_table_active_number",
             "hall_id",
@@ -118,12 +118,12 @@ class Table(TimestampMixin, Base):
     width: Mapped[float | None] = mapped_column(Float)
     height: Mapped[float | None] = mapped_column(Float)
     description: Mapped[str] = mapped_column(Text, default="")
+    # Цена брони стола; None - цена не задана (бронь без оплаты стола)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     status: Mapped[str] = mapped_column(String(20), default=TableStatus.ACTIVE)
     occupied: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false()
     )
-    # Цена брони стола; None - цена не задана (столы, созданные до её появления)
-    price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 

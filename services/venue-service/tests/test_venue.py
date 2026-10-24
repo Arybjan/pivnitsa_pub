@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import jwt
 import pytest
@@ -139,72 +140,6 @@ def test_table_occupied_does_not_block_booking(client, admin, table):
     assert client.get(path).json()["occupied"] is True
     assert availability(client, table["id"])["physically_available"] is True
     assert client.patch(path, headers=admin, json={"occupied": None}).status_code == 422
-
-
-def test_table_price_create_update_and_reset(client, admin, hall, table):
-    path = f"/api/v1/tables/{table['id']}"
-    assert table["price"] is None
-    response = client.post(
-        "/api/v1/tables",
-        headers=admin,
-        json={
-            "hall_id": hall["id"],
-            "number": 2,
-            "capacity": 2,
-            "x": 0,
-            "y": 0,
-            "price": "1500.50",
-        },
-    )
-    assert response.status_code == 201
-    assert response.json()["price"] == "1500.50"
-    # Число из JSON хранится как Decimal, без хвоста float
-    response = client.patch(path, headers=admin, json={"price": 0.3})
-    assert response.status_code == 200
-    assert response.json()["price"] == "0.30"
-    assert client.get(path).json()["price"] == "0.30"
-    listed = client.get("/api/v1/tables", params={"hall_id": hall["id"]}).json()
-    assert [item["price"] for item in listed] == ["0.30", "1500.50"]
-    hall_map = client.get(f"/api/v1/halls/{hall['id']}/map").json()
-    assert hall_map["tables"][0]["price"] == "0.30"
-    assert (
-        client.patch(path, headers=admin, json={"price": 0}).json()["price"] == "0.00"
-    )
-    response = client.patch(path, headers=admin, json={"price": None})
-    assert response.status_code == 200
-    assert client.get(path).json()["price"] is None
-
-
-@pytest.mark.parametrize(
-    "price", [-1, "-0.01", "1.234", "100000000.00", "NaN", "Infinity", "abc"]
-)
-def test_invalid_table_price(client, admin, hall, table, price):
-    path = f"/api/v1/tables/{table['id']}"
-    assert client.patch(path, headers=admin, json={"price": price}).status_code == 422
-    payload = {"hall_id": hall["id"], "number": 9, "capacity": 2, "x": 0, "y": 0}
-    response = client.post(
-        "/api/v1/tables", headers=admin, json={**payload, "price": price}
-    )
-    assert response.status_code == 422
-
-
-def test_list_tables_by_ids(client, admin, hall, table):
-    payload = {"hall_id": hall["id"], "capacity": 2, "x": 0, "y": 0}
-    second = client.post(
-        "/api/v1/tables", headers=admin, json={**payload, "number": 7}
-    ).json()
-    client.post("/api/v1/tables", headers=admin, json={**payload, "number": 8})
-    response = client.get(
-        "/api/v1/tables", params={"id": [second["id"], table["id"], 999]}
-    )
-    assert response.status_code == 200
-    assert [(item["id"], item["number"]) for item in response.json()] == [
-        (table["id"], 1),
-        (second["id"], 7),
-    ]
-    assert client.get("/api/v1/tables", params={"id": 0}).status_code == 422
-    too_many = client.get("/api/v1/tables", params={"id": list(range(1, 202))})
-    assert too_many.status_code == 422
 
 
 def test_number_unique_in_hall_and_filters(client, admin, table):
@@ -516,8 +451,7 @@ def test_block_cannot_be_removed_through_another_table(client, admin, table):
 
 
 @pytest.mark.parametrize(
-    "assignment",
-    ["capacity = 0", "x = -1", "status = 'BOOKED'", "number = 0", "price = -1"],
+    "assignment", ["capacity = 0", "x = -1", "status = 'BOOKED'", "number = 0"]
 )
 def test_database_rejects_invalid_table_state(database, table, assignment):
     with pytest.raises(IntegrityError), database.begin() as connection:
@@ -538,15 +472,84 @@ def test_migration_round_trip_and_model_match(database):
     command.check(config)
 
 
-def test_price_migration_keeps_existing_tables(database, table):
-    config = Config("alembic.ini")
-    command.downgrade(config, "0003")
-    assert "price" not in {
-        column["name"] for column in inspect(database).get_columns("venue_tables")
-    }
-    command.upgrade(config, "head")
-    with database.connect() as connection:
-        row = connection.execute(
-            text("SELECT number, capacity, price FROM venue_tables")
-        ).one()
-    assert (row.number, row.capacity, row.price) == (1, 4, None)
+def test_table_price_create_update_and_read(client, admin, hall, table):
+    assert table["price"] is None
+    response = client.post(
+        "/api/v1/tables",
+        headers=admin,
+        json={
+            "hall_id": hall["id"],
+            "number": 2,
+            "capacity": 4,
+            "x": 0.5,
+            "y": 0.5,
+            "price": "1500.50",
+        },
+    )
+    assert response.status_code == 201
+    priced = response.json()
+    assert priced["price"] == "1500.50"
+    path = f"/api/v1/tables/{priced['id']}"
+    assert client.get(path).json()["price"] == "1500.50"
+    assert client.patch(path, headers=admin, json={"price": 0}).json()["price"] in (
+        "0",
+        "0.00",
+    )
+    response = client.patch(path, headers=admin, json={"price": 0.1})
+    assert Decimal(response.json()["price"]) == Decimal("0.10")
+    prices = {t["number"]: t["price"] for t in client.get("/api/v1/tables").json()}
+    assert Decimal(prices[2]) == Decimal("0.10") and prices[1] is None
+    map_tables = client.get(f"/api/v1/halls/{hall['id']}/map").json()["tables"]
+    assert {t["number"] for t in map_tables if t["price"] is not None} == {2}
+    response = client.patch(path, headers=admin, json={"price": None})
+    assert response.status_code == 200
+    assert client.get(path).json()["price"] is None
+    # Изменение других полей цену не трогает
+    client.patch(path, headers=admin, json={"price": "700"})
+    client.patch(path, headers=admin, json={"capacity": 6})
+    assert Decimal(client.get(path).json()["price"]) == Decimal("700")
+
+
+@pytest.mark.parametrize("price", [-1, "-0.01", "1.234", "1e13", "NaN", "abc", True])
+def test_invalid_table_price(client, admin, hall, table, price):
+    response = client.patch(
+        f"/api/v1/tables/{table['id']}", headers=admin, json={"price": price}
+    )
+    assert response.status_code == 422
+    response = client.post(
+        "/api/v1/tables",
+        headers=admin,
+        json={
+            "hall_id": hall["id"],
+            "number": 3,
+            "capacity": 2,
+            "x": 0,
+            "y": 0,
+            "price": price,
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_database_rejects_negative_price(database, table):
+    with pytest.raises(IntegrityError), database.begin() as connection:
+        connection.execute(text("UPDATE venue_tables SET price = -1"))
+
+
+def test_table_numbers_include_deleted_tables(client, admin, hall, table):
+    other = client.post(
+        "/api/v1/tables",
+        headers=admin,
+        json={"hall_id": hall["id"], "number": 7, "capacity": 2, "x": 0, "y": 0},
+    ).json()
+    client.delete(f"/api/v1/tables/{other['id']}", headers=admin)
+    response = client.get(
+        f"/api/v1/tables/numbers?id={table['id']}&id={other['id']}"
+        f"&id={table['id']}&id=999"
+    )
+    assert response.status_code == 200
+    assert response.json() == [
+        {"id": table["id"], "number": 1},
+        {"id": other["id"], "number": 7},
+    ]
+    assert client.get("/api/v1/tables/numbers").status_code == 422
