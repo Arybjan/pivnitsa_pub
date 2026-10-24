@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -8,6 +9,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Numeric,
     String,
     Text,
     false,
@@ -93,6 +95,7 @@ class Table(TimestampMixin, Base):
             name="ck_table_size",
         ),
         CheckConstraint("status IN ('ACTIVE', 'UNAVAILABLE')", name="ck_table_status"),
+        CheckConstraint("price IS NULL OR price >= 0", name="ck_table_price"),
         Index(
             "uq_table_active_number",
             "hall_id",
@@ -119,6 +122,8 @@ class Table(TimestampMixin, Base):
     occupied: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false()
     )
+    # Цена брони стола; None - цена не задана (столы, созданные до её появления)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 

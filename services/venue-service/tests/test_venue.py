@@ -141,6 +141,53 @@ def test_table_occupied_does_not_block_booking(client, admin, table):
     assert client.patch(path, headers=admin, json={"occupied": None}).status_code == 422
 
 
+def test_table_price_create_update_and_reset(client, admin, hall, table):
+    path = f"/api/v1/tables/{table['id']}"
+    assert table["price"] is None
+    response = client.post(
+        "/api/v1/tables",
+        headers=admin,
+        json={
+            "hall_id": hall["id"],
+            "number": 2,
+            "capacity": 2,
+            "x": 0,
+            "y": 0,
+            "price": "1500.50",
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["price"] == "1500.50"
+    # Число из JSON хранится как Decimal, без хвоста float
+    response = client.patch(path, headers=admin, json={"price": 0.3})
+    assert response.status_code == 200
+    assert response.json()["price"] == "0.30"
+    assert client.get(path).json()["price"] == "0.30"
+    listed = client.get("/api/v1/tables", params={"hall_id": hall["id"]}).json()
+    assert [item["price"] for item in listed] == ["0.30", "1500.50"]
+    hall_map = client.get(f"/api/v1/halls/{hall['id']}/map").json()
+    assert hall_map["tables"][0]["price"] == "0.30"
+    assert (
+        client.patch(path, headers=admin, json={"price": 0}).json()["price"] == "0.00"
+    )
+    response = client.patch(path, headers=admin, json={"price": None})
+    assert response.status_code == 200
+    assert client.get(path).json()["price"] is None
+
+
+@pytest.mark.parametrize(
+    "price", [-1, "-0.01", "1.234", "100000000.00", "NaN", "Infinity", "abc"]
+)
+def test_invalid_table_price(client, admin, hall, table, price):
+    path = f"/api/v1/tables/{table['id']}"
+    assert client.patch(path, headers=admin, json={"price": price}).status_code == 422
+    payload = {"hall_id": hall["id"], "number": 9, "capacity": 2, "x": 0, "y": 0}
+    response = client.post(
+        "/api/v1/tables", headers=admin, json={**payload, "price": price}
+    )
+    assert response.status_code == 422
+
+
 def test_number_unique_in_hall_and_filters(client, admin, table):
     payload = {"hall_id": table["hall_id"], "number": 1, "capacity": 6, "x": 0, "y": 0}
     assert client.post("/api/v1/tables", json=payload, headers=admin).status_code == 409
@@ -450,7 +497,8 @@ def test_block_cannot_be_removed_through_another_table(client, admin, table):
 
 
 @pytest.mark.parametrize(
-    "assignment", ["capacity = 0", "x = -1", "status = 'BOOKED'", "number = 0"]
+    "assignment",
+    ["capacity = 0", "x = -1", "status = 'BOOKED'", "number = 0", "price = -1"],
 )
 def test_database_rejects_invalid_table_state(database, table, assignment):
     with pytest.raises(IntegrityError), database.begin() as connection:
@@ -469,3 +517,17 @@ def test_migration_round_trip_and_model_match(database):
     assert "halls" not in inspect(database).get_table_names()
     command.upgrade(config, "head")
     command.check(config)
+
+
+def test_price_migration_keeps_existing_tables(database, table):
+    config = Config("alembic.ini")
+    command.downgrade(config, "0003")
+    assert "price" not in {
+        column["name"] for column in inspect(database).get_columns("venue_tables")
+    }
+    command.upgrade(config, "head")
+    with database.connect() as connection:
+        row = connection.execute(
+            text("SELECT number, capacity, price FROM venue_tables")
+        ).one()
+    assert (row.number, row.capacity, row.price) == (1, 4, None)
