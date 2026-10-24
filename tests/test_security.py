@@ -3,7 +3,7 @@ import jwt
 import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.pool import NullPool
 
 from app.main import app
@@ -126,3 +126,107 @@ async def test_user_can_read_own_notifications(auth_client):
         items = res.json()
         assert len(items) == 1
         assert items[0]["title"] == "Own Notice"
+
+
+# --- Пользователь определяется только по access token ---
+
+def bearer(sub, role="user"):
+    return {"Authorization": f"Bearer {create_token(sub=sub, role=role)}"}
+
+
+async def seed(*notifications):
+    async with TestSessionLocal() as session:
+        session.add_all(notifications)
+        await session.commit()
+
+
+async def unread_of(user_id):
+    async with TestSessionLocal() as session:
+        result = await session.execute(
+            select(Notification).where(Notification.user_id == user_id, Notification.is_read == False)
+        )
+        return len(result.scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_list_and_count_without_user_id_use_token(auth_client):
+    await seed(
+        Notification(user_id=50, title="Own", message="m", type="info"),
+        Notification(user_id=99, title="Foreign", message="m", type="info"),
+    )
+    async with auth_client as ac:
+        res = await ac.get("/api/v1/notifications/", headers=bearer(50))
+        assert res.status_code == 200
+        assert [item["title"] for item in res.json()] == ["Own"]
+
+        res = await ac.get("/api/v1/notifications/unread-count", headers=bearer(50))
+        assert res.json() == {"user_id": 50, "unread_count": 1}
+
+
+@pytest.mark.asyncio
+async def test_user_cannot_count_foreign_notifications(auth_client):
+    async with auth_client as ac:
+        res = await ac.get("/api/v1/notifications/unread-count?user_id=99", headers=bearer(50))
+        assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_can_still_read_user_notifications(auth_client):
+    await seed(Notification(user_id=99, title="Foreign", message="m", type="info"))
+    async with auth_client as ac:
+        res = await ac.get("/api/v1/notifications/?user_id=99", headers=bearer(1, role="admin"))
+        assert res.status_code == 200
+        assert [item["title"] for item in res.json()] == ["Foreign"]
+
+
+@pytest.mark.asyncio
+async def test_read_all_marks_only_token_owner(auth_client):
+    await seed(
+        Notification(user_id=50, title="Own 1", message="m", type="info"),
+        Notification(user_id=50, title="Own 2", message="m", type="info"),
+        Notification(user_id=99, title="Foreign", message="m", type="info"),
+    )
+    async with auth_client as ac:
+        res = await ac.patch("/api/v1/notifications/read-all", headers=bearer(50))
+        assert res.status_code == 200
+        assert res.json() == {"status": "ok", "user_id": 50, "updated_count": 2}
+    assert await unread_of(50) == 0
+    assert await unread_of(99) == 1
+
+
+@pytest.mark.asyncio
+async def test_read_all_ignores_user_id_in_query(auth_client):
+    await seed(
+        Notification(user_id=50, title="Own", message="m", type="info"),
+        Notification(user_id=99, title="Foreign", message="m", type="info"),
+    )
+    async with auth_client as ac:
+        res = await ac.patch("/api/v1/notifications/read-all?user_id=99", headers=bearer(50))
+        assert res.status_code == 200
+        assert res.json()["user_id"] == 50
+        # даже админ через read-all меняет только свои уведомления
+        res = await ac.patch("/api/v1/notifications/read-all?user_id=99", headers=bearer(1, role="admin"))
+        assert res.json()["user_id"] == 1
+    assert await unread_of(50) == 0
+    assert await unread_of(99) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},
+        {"Authorization": "Bearer not-a-jwt"},
+        {"Authorization": f"Bearer {create_token(token_type='refresh')}"},
+        {"Authorization": f"Bearer {create_token(secret='another-secret-that-is-long-enough-123')}"},
+        {"Authorization": f"Bearer {create_token(exp_offset=-100)}"},
+    ],
+)
+async def test_read_all_requires_valid_access_token(auth_client, headers):
+    await seed(Notification(user_id=10, title="Own", message="m", type="info"))
+    async with auth_client as ac:
+        res = await ac.patch("/api/v1/notifications/read-all", headers=headers)
+        assert res.status_code == 401
+        res = await ac.get("/api/v1/notifications/unread-count", headers=headers)
+        assert res.status_code == 401
+    assert await unread_of(10) == 1

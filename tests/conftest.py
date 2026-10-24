@@ -32,3 +32,13 @@ def _default_test_auth_override():
     yield
     app.dependency_overrides.pop(get_current_user, None)
     app.dependency_overrides.pop(require_service_or_admin, None)
+
+
+@pytest.fixture
+def as_user():
+    """Подменяет владельца access token: as_user(777) - запросы от пользователя 777."""
+    def login(user_id: int, role: str = "user") -> AuthenticatedUser:
+        user = AuthenticatedUser(user_id=user_id, role=role)
+        app.dependency_overrides[get_current_user] = lambda: user
+        return user
+    return login

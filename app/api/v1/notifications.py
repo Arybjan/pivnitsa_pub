@@ -15,6 +15,19 @@ from app.services.sms_service import send_sms_via_nikita
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
+def resolve_target_user(current_user: AuthenticatedUser, user_id: int | None) -> int:
+    """Чьи уведомления читаем: по умолчанию владельца access token.
+
+    Чужой user_id в query допустим только для admin/service, обычный
+    пользователь получает 403 - клиенту не доверяем выбор владельца.
+    """
+    if user_id is None or user_id == current_user.user_id:
+        return current_user.user_id
+    if not current_user.is_admin_or_service:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    return user_id
+
+
 @router.post("/", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)
 async def create_notification(data: NotificationCreate, auth: AuthenticatedUser = Depends(require_service_or_admin), db: AsyncSession = Depends(get_db)):
     notification = Notification(**data.model_dump())
@@ -24,10 +37,9 @@ async def create_notification(data: NotificationCreate, auth: AuthenticatedUser 
 
 
 @router.get("/", response_model=list[NotificationResponse])
-async def get_user_notifications(user_id: BigIntId, current_user: AuthenticatedUser = Depends(get_current_user), unread_only: bool = False, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db)):
-    if not current_user.is_admin_or_service and user_id != current_user.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    
+async def get_user_notifications(user_id: BigIntId | None = None, current_user: AuthenticatedUser = Depends(get_current_user), unread_only: bool = False, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db)):
+    user_id = resolve_target_user(current_user, user_id)
+
     settings = await db.get(NotificationSettings, user_id)
     events_enabled = settings.events_enabled if settings else True
     booking_enabled = settings.booking_enabled if settings else True
@@ -52,10 +64,9 @@ async def get_user_notifications(user_id: BigIntId, current_user: AuthenticatedU
 
 
 @router.get("/unread-count", response_model=UnreadCountResponse)
-async def get_unread_count(user_id: BigIntId, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    if not current_user.is_admin_or_service and user_id != current_user.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    
+async def get_unread_count(user_id: BigIntId | None = None, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    user_id = resolve_target_user(current_user, user_id)
+
     settings = await db.get(NotificationSettings, user_id)
     events_enabled = settings.events_enabled if settings else True
     booking_enabled = settings.booking_enabled if settings else True
@@ -160,9 +171,9 @@ async def mark_as_read(notification_id: BigIntPath, current_user: AuthenticatedU
 
 
 @router.patch("/read-all")
-async def mark_all_as_read(user_id: BigIntId, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    if not current_user.is_admin_or_service and user_id != current_user.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+async def mark_all_as_read(current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    # Только уведомления владельца токена: user_id из запроса не принимаем
+    user_id = current_user.user_id
     stmt = update(Notification).where(or_(Notification.user_id == user_id, Notification.user_id.is_(None)), Notification.is_read == False).values(is_read=True)
     result = await db.execute(stmt)
     await db.commit()

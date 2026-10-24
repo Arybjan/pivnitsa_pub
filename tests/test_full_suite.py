@@ -212,20 +212,22 @@ async def test_mark_as_read_not_found(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_mark_all_as_read(client: AsyncClient):
+async def test_mark_all_as_read(client: AsyncClient, as_user):
     for i in range(5):
         await client.post("/api/v1/notifications/", json={
             "user_id": 777, "title": f"T{i}", "message": f"M{i}", "type": "t"
         })
 
-    res = await client.patch("/api/v1/notifications/read-all?user_id=777")
+    as_user(777)
+    res = await client.patch("/api/v1/notifications/read-all")
     assert res.status_code == 200
     assert res.json()["updated_count"] == 5
+    assert res.json()["user_id"] == 777
 
-    cnt_res = await client.get("/api/v1/notifications/unread-count?user_id=777")
+    cnt_res = await client.get("/api/v1/notifications/unread-count")
     assert cnt_res.json()["unread_count"] == 0
 
-    res_again = await client.patch("/api/v1/notifications/read-all?user_id=777")
+    res_again = await client.patch("/api/v1/notifications/read-all")
     assert res_again.status_code == 200
     assert res_again.json()["updated_count"] == 0
 

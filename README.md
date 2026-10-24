@@ -57,11 +57,11 @@ docker-compose.yml        - запуск сервиса
 ## Эндпоинты
 
 - `POST /api/v1/notifications/` — Создание уведомления (service/admin).
-- `GET /api/v1/notifications/` — Список уведомлений пользователя и общие анонсы (user_id, unread_only, limit, offset).
-- `GET /api/v1/notifications/unread-count` — Количество непрочитанных уведомлений (user_id).
+- `GET /api/v1/notifications/` — Список уведомлений владельца access token и общие анонсы (unread_only, limit, offset). `user_id` не нужен; передать чужой `user_id` может только admin/service, обычный пользователь получит 403.
+- `GET /api/v1/notifications/unread-count` — Количество непрочитанных уведомлений владельца access token (`user_id` — как в списке).
 - `GET /api/v1/notifications/{notification_id}` — Получение одного уведомления по ID.
 - `PATCH /api/v1/notifications/{notification_id}/read` — Пометить одно уведомление как прочитанное.
-- `PATCH /api/v1/notifications/read-all` — Пометить все уведомления пользователя как прочитанные (user_id).
+- `PATCH /api/v1/notifications/read-all` — Пометить все уведомления владельца access token как прочитанные. Параметра `user_id` нет: чужие уведомления так изменить нельзя. Ответ: `{"status": "ok", "user_id": 50, "updated_count": 2}`.
 - `DELETE /api/v1/notifications/{notification_id}` — Удалить уведомление.
 - `POST /api/v1/notifications/sms` — Отправка SMS через провайдер Nikita в фоне (phone_number, message).
 - `GET /health` — Проверка работы сервиса.

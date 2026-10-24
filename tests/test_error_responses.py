@@ -145,15 +145,13 @@ async def test_error_null_byte_rejection(client: AsyncClient):
 # ====================================================================
 
 @pytest.mark.asyncio
-async def test_error_missing_query_parameter(client: AsyncClient):
-    """Проверка ошибки при отсутствии обязательного query-параметра user_id"""
+async def test_user_id_query_parameter_not_required(client: AsyncClient):
+    """user_id больше не обязателен: пользователь берётся из access token"""
     res = await client.get("/api/v1/notifications/")
-    assert res.status_code == 422
-    data = res.json()
-    err = data["detail"][0]
-    assert err["loc"] == ["query", "user_id"]
-    assert err["type"] == "missing"
-    assert "Field required" in err["msg"]
+    assert res.status_code == 200
+    res = await client.get("/api/v1/notifications/unread-count")
+    assert res.status_code == 200
+    assert res.json()["user_id"] == 1
 
 
 @pytest.mark.asyncio

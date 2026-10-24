@@ -247,7 +247,7 @@ async def test_unicode_and_emoji_handling(client: AsyncClient):
 # ====================================================================
 
 @pytest.mark.asyncio
-async def test_concurrent_notification_creation(client: AsyncClient):
+async def test_concurrent_notification_creation(client: AsyncClient, as_user):
     """Simulate 30 concurrent creation requests for the same user."""
     async def create_one(idx: int):
         return await client.post("/api/v1/notifications/", json={
@@ -268,6 +268,7 @@ async def test_concurrent_notification_creation(client: AsyncClient):
     assert count_res.json()["unread_count"] == 30
 
     # Concurrent mark as read
-    res_mark = await client.patch("/api/v1/notifications/read-all?user_id=555")
+    as_user(555)
+    res_mark = await client.patch("/api/v1/notifications/read-all")
     assert res_mark.status_code == 200
     assert res_mark.json()["updated_count"] == 30
