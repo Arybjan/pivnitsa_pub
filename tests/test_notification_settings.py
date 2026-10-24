@@ -60,19 +60,19 @@ async def test_events_disabled_immediate_effect(client):
             json={"user_id": 1, "title": "Booking", "message": "Table 5", "type": "booking_created"}
         )
 
-        res = await ac.get("/api/v1/notifications/?user_id=1")
+        res = await ac.get("/api/v1/notifications/")
         assert len(res.json()) == 2
-        cnt = await ac.get("/api/v1/notifications/unread-count?user_id=1")
+        cnt = await ac.get("/api/v1/notifications/unread-count")
         assert cnt.json()["unread_count"] == 2
 
         await ac.patch("/api/v1/notifications/settings", json={"events_enabled": False})
 
-        res_after = await ac.get("/api/v1/notifications/?user_id=1")
+        res_after = await ac.get("/api/v1/notifications/")
         items = res_after.json()
         assert len(items) == 1
         assert items[0]["type"] == "booking_created"
 
-        cnt_after = await ac.get("/api/v1/notifications/unread-count?user_id=1")
+        cnt_after = await ac.get("/api/v1/notifications/unread-count")
         assert cnt_after.json()["unread_count"] == 1
 
 
@@ -90,12 +90,12 @@ async def test_booking_disabled_immediate_effect(client):
 
         await ac.patch("/api/v1/notifications/settings", json={"booking_enabled": False})
 
-        res = await ac.get("/api/v1/notifications/?user_id=1")
+        res = await ac.get("/api/v1/notifications/")
         items = res.json()
         assert len(items) == 1
         assert items[0]["type"] == "event_published"
 
-        cnt = await ac.get("/api/v1/notifications/unread-count?user_id=1")
+        cnt = await ac.get("/api/v1/notifications/unread-count")
         assert cnt.json()["unread_count"] == 1
 
 

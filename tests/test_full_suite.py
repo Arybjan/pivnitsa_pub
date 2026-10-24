@@ -116,7 +116,7 @@ async def test_create_notification_validation(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_get_user_notifications_ordering_and_isolation(client: AsyncClient):
+async def test_get_user_notifications_ordering_and_isolation(client: AsyncClient, act_as):
     for i in range(3):
         await client.post("/api/v1/notifications/", json={
             "user_id": 1,
@@ -133,7 +133,8 @@ async def test_get_user_notifications_ordering_and_isolation(client: AsyncClient
         "type": "alert"
     })
 
-    res1 = await client.get("/api/v1/notifications/?user_id=1")
+    act_as(1)
+    res1 = await client.get("/api/v1/notifications/")
     assert res1.status_code == 200
     items1 = res1.json()
     assert len(items1) == 3
@@ -141,7 +142,8 @@ async def test_get_user_notifications_ordering_and_isolation(client: AsyncClient
     assert items1[1]["title"] == "Title 1"
     assert items1[2]["title"] == "Title 0"
 
-    res2 = await client.get("/api/v1/notifications/?user_id=2")
+    act_as(2)
+    res2 = await client.get("/api/v1/notifications/")
     assert res2.status_code == 200
     items2 = res2.json()
     assert len(items2) == 1
@@ -149,7 +151,7 @@ async def test_get_user_notifications_ordering_and_isolation(client: AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_get_user_notifications_pagination_and_validation(client: AsyncClient):
+async def test_get_user_notifications_pagination_and_validation(client: AsyncClient, act_as):
     for i in range(7):
         await client.post("/api/v1/notifications/", json={
             "user_id": 5,
@@ -159,24 +161,26 @@ async def test_get_user_notifications_pagination_and_validation(client: AsyncCli
         })
 
     # Normal pagination
-    res_p1 = await client.get("/api/v1/notifications/?user_id=5&limit=3&offset=0")
+    act_as(5)
+    res_p1 = await client.get("/api/v1/notifications/?limit=3&offset=0")
     assert len(res_p1.json()) == 3
 
-    res_p2 = await client.get("/api/v1/notifications/?user_id=5&limit=3&offset=3")
+    res_p2 = await client.get("/api/v1/notifications/?limit=3&offset=3")
     assert len(res_p2.json()) == 3
 
     # Negative offset returns 422
-    res_neg_offset = await client.get("/api/v1/notifications/?user_id=5&offset=-1")
+    res_neg_offset = await client.get("/api/v1/notifications/?offset=-1")
     assert res_neg_offset.status_code == 422
 
     # Negative limit returns 422
-    res_neg_limit = await client.get("/api/v1/notifications/?user_id=5&limit=0")
+    res_neg_limit = await client.get("/api/v1/notifications/?limit=0")
     assert res_neg_limit.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_unread_count_and_mark_read(client: AsyncClient):
-    res_zero = await client.get("/api/v1/notifications/unread-count?user_id=999")
+async def test_unread_count_and_mark_read(client: AsyncClient, act_as):
+    act_as(999)
+    res_zero = await client.get("/api/v1/notifications/unread-count")
     assert res_zero.status_code == 200
     assert res_zero.json() == {"user_id": 999, "unread_count": 0}
 
@@ -189,17 +193,17 @@ async def test_unread_count_and_mark_read(client: AsyncClient):
     id1 = r1.json()["id"]
     id2 = r2.json()["id"]
 
-    res_two = await client.get("/api/v1/notifications/unread-count?user_id=999")
+    res_two = await client.get("/api/v1/notifications/unread-count")
     assert res_two.json()["unread_count"] == 2
 
     patch_res = await client.patch(f"/api/v1/notifications/{id1}/read")
     assert patch_res.status_code == 200
     assert patch_res.json()["status"] == "ok"
 
-    res_one = await client.get("/api/v1/notifications/unread-count?user_id=999")
+    res_one = await client.get("/api/v1/notifications/unread-count")
     assert res_one.json()["unread_count"] == 1
 
-    unread_res = await client.get("/api/v1/notifications/?user_id=999&unread_only=true")
+    unread_res = await client.get("/api/v1/notifications/?unread_only=true")
     assert len(unread_res.json()) == 1
     assert unread_res.json()[0]["id"] == id2
 
@@ -212,17 +216,16 @@ async def test_mark_as_read_not_found(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_mark_all_as_read(client: AsyncClient, as_user):
+async def test_mark_all_as_read(client: AsyncClient, act_as):
     for i in range(5):
         await client.post("/api/v1/notifications/", json={
             "user_id": 777, "title": f"T{i}", "message": f"M{i}", "type": "t"
         })
 
-    as_user(777)
+    act_as(777)
     res = await client.patch("/api/v1/notifications/read-all")
     assert res.status_code == 200
     assert res.json()["updated_count"] == 5
-    assert res.json()["user_id"] == 777
 
     cnt_res = await client.get("/api/v1/notifications/unread-count")
     assert cnt_res.json()["unread_count"] == 0

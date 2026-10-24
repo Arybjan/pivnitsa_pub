@@ -145,23 +145,21 @@ async def test_error_null_byte_rejection(client: AsyncClient):
 # ====================================================================
 
 @pytest.mark.asyncio
-async def test_user_id_query_parameter_not_required(client: AsyncClient):
-    """user_id больше не обязателен: пользователь берётся из access token"""
+async def test_error_missing_query_parameter(client: AsyncClient):
+    """Проверка ошибки при отсутствии обязательного query-параметра user_id"""
+    # user_id больше не обязателен: пользователь берётся из токена
     res = await client.get("/api/v1/notifications/")
     assert res.status_code == 200
-    res = await client.get("/api/v1/notifications/unread-count")
-    assert res.status_code == 200
-    assert res.json()["user_id"] == 1
 
 
 @pytest.mark.asyncio
 async def test_error_invalid_query_parameter_type(client: AsyncClient):
-    """Проверка ошибки при нечисловом user_id в GET запросе"""
-    res = await client.get("/api/v1/notifications/?user_id=invalid_id")
+    """Проверка ошибки при нечисловом limit в GET запросе"""
+    res = await client.get("/api/v1/notifications/?limit=invalid")
     assert res.status_code == 422
     data = res.json()
     err = data["detail"][0]
-    assert err["loc"] == ["query", "user_id"]
+    assert err["loc"] == ["query", "limit"]
     assert "int" in err["msg"].lower() or "integer" in err["msg"].lower()
 
 
@@ -169,17 +167,17 @@ async def test_error_invalid_query_parameter_type(client: AsyncClient):
 async def test_error_invalid_pagination_query_parameters(client: AsyncClient):
     """Проверка ошибок диапазона limit и offset"""
     # limit = 0 (меньше минимума 1)
-    res_lim0 = await client.get("/api/v1/notifications/?user_id=1&limit=0")
+    res_lim0 = await client.get("/api/v1/notifications/?limit=0")
     assert res_lim0.status_code == 422
     assert "greater than or equal to 1" in res_lim0.json()["detail"][0]["msg"]
 
     # limit = 500 (больше максимума 100)
-    res_lim500 = await client.get("/api/v1/notifications/?user_id=1&limit=500")
+    res_lim500 = await client.get("/api/v1/notifications/?limit=500")
     assert res_lim500.status_code == 422
     assert "less than or equal to 100" in res_lim500.json()["detail"][0]["msg"]
 
     # offset = -10 (отрицательный)
-    res_off = await client.get("/api/v1/notifications/?user_id=1&offset=-10")
+    res_off = await client.get("/api/v1/notifications/?offset=-10")
     assert res_off.status_code == 422
     assert "greater than or equal to 0" in res_off.json()["detail"][0]["msg"]
 

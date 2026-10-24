@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, Boolean, DateTime, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -19,3 +19,15 @@ class NotificationSettings(Base):
     booking_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     sms_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class NotificationRead(Base):
+    """Отметка "прочитано" общего анонса (user_id IS NULL) для одного пользователя.
+
+    Флаг is_read в самом анонсе общий для всех, поэтому прочтение анонса
+    хранится отдельно и не меняет его для других пользователей.
+    """
+    __tablename__ = "notification_reads"
+    notification_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("notifications.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

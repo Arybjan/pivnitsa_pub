@@ -1,31 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, func, or_, and_
+from sqlalchemy import BigInteger, select, update, func, or_, and_, exists, literal
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.database import get_db
 from app.core.security import AuthenticatedUser, get_current_user, require_service_or_admin
-from app.models.notification import Notification, NotificationSettings
+from app.models.notification import Notification, NotificationRead, NotificationSettings
 from app.schemas.notification import (
-    BigIntId, BigIntPath, NotificationCreate, NotificationResponse,
+    BigIntPath, NotificationCreate, NotificationResponse,
     UnreadCountResponse, SendSMSRequest, SendSMSResponse,
     NotificationSettingsUpdate, NotificationSettingsResponse
 )
 from app.services.sms_service import send_sms_via_nikita
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
-
-
-def resolve_target_user(current_user: AuthenticatedUser, user_id: int | None) -> int:
-    """Чьи уведомления читаем: по умолчанию владельца access token.
-
-    Чужой user_id в query допустим только для admin/service, обычный
-    пользователь получает 403 - клиенту не доверяем выбор владельца.
-    """
-    if user_id is None or user_id == current_user.user_id:
-        return current_user.user_id
-    if not current_user.is_admin_or_service:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    return user_id
 
 
 @router.post("/", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)
@@ -36,61 +24,70 @@ async def create_notification(data: NotificationCreate, auth: AuthenticatedUser 
     return notification
 
 
-@router.get("/", response_model=list[NotificationResponse])
-async def get_user_notifications(user_id: BigIntId | None = None, current_user: AuthenticatedUser = Depends(get_current_user), unread_only: bool = False, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db)):
-    user_id = resolve_target_user(current_user, user_id)
-
-    settings = await db.get(NotificationSettings, user_id)
+def _visible_to(user_id: int, settings: NotificationSettings | None):
+    """Условие: личные уведомления пользователя и общие анонсы с учётом его настроек."""
     events_enabled = settings.events_enabled if settings else True
     booking_enabled = settings.booking_enabled if settings else True
 
     conditions = []
     if events_enabled:
         conditions.append(Notification.user_id.is_(None))
-    
+
     user_filters = [Notification.user_id == user_id]
     if not events_enabled:
         user_filters.append(~Notification.type.startswith("event"))
     if not booking_enabled:
         user_filters.append(~Notification.type.startswith("booking"))
-    
+
     conditions.append(and_(*user_filters))
-    query = select(Notification).where(or_(*conditions))
+    return or_(*conditions)
+
+
+def _is_read_by(user_id: int):
+    """Прочитано ли уведомление этим пользователем.
+
+    Личное - по флагу is_read. Анонс - по отметке в notification_reads;
+    общий флаг is_read анонса учитывается для старых отметок до миграции.
+    """
+    read_mark = exists().where(
+        NotificationRead.notification_id == Notification.id,
+        NotificationRead.user_id == user_id,
+    )
+    return or_(Notification.is_read.is_(True), and_(Notification.user_id.is_(None), read_mark))
+
+
+def _response(notification: Notification, is_read: bool) -> NotificationResponse:
+    item = NotificationResponse.model_validate(notification)
+    item.is_read = bool(is_read)
+    return item
+
+
+@router.get("/", response_model=list[NotificationResponse])
+async def get_user_notifications(current_user: AuthenticatedUser = Depends(get_current_user), unread_only: bool = False, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db)):
+    user_id = current_user.user_id
+    settings = await db.get(NotificationSettings, user_id)
+    is_read = _is_read_by(user_id)
+    query = select(Notification, is_read.label("is_read_by_user")).where(_visible_to(user_id, settings))
     if unread_only:
-        query = query.where(Notification.is_read == False)
-    query = query.order_by(Notification.created_at.desc()).limit(limit).offset(offset)
+        query = query.where(~is_read)
+    query = query.order_by(Notification.created_at.desc(), Notification.id.desc()).limit(limit).offset(offset)
     result = await db.execute(query)
-    return result.scalars().all()
+    return [_response(notification, read) for notification, read in result.all()]
 
 
 @router.get("/unread-count", response_model=UnreadCountResponse)
-async def get_unread_count(user_id: BigIntId | None = None, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    user_id = resolve_target_user(current_user, user_id)
-
+async def get_unread_count(current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    user_id = current_user.user_id
     settings = await db.get(NotificationSettings, user_id)
-    events_enabled = settings.events_enabled if settings else True
-    booking_enabled = settings.booking_enabled if settings else True
-
-    conditions = []
-    if events_enabled:
-        conditions.append(Notification.user_id.is_(None))
-    
-    user_filters = [Notification.user_id == user_id]
-    if not events_enabled:
-        user_filters.append(~Notification.type.startswith("event"))
-    if not booking_enabled:
-        user_filters.append(~Notification.type.startswith("booking"))
-    
-    conditions.append(and_(*user_filters))
-    query = select(func.count(Notification.id)).where(or_(*conditions), Notification.is_read == False)
+    query = select(func.count(Notification.id)).where(_visible_to(user_id, settings), ~_is_read_by(user_id))
     result = await db.execute(query)
     count = result.scalar() or 0
     return UnreadCountResponse(user_id=user_id, unread_count=count)
 
 
 @router.get("/settings", response_model=NotificationSettingsResponse)
-async def get_notification_settings(user_id: BigIntId | None = None, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    target_user_id = user_id if (user_id and current_user.is_admin_or_service) else current_user.user_id
+async def get_notification_settings(current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    target_user_id = current_user.user_id
     settings = await db.get(NotificationSettings, target_user_id)
     if not settings:
         settings = NotificationSettings(user_id=target_user_id, events_enabled=True, booking_enabled=True, sms_enabled=True)
@@ -101,8 +98,8 @@ async def get_notification_settings(user_id: BigIntId | None = None, current_use
 
 
 @router.patch("/settings", response_model=NotificationSettingsResponse)
-async def update_notification_settings(data: NotificationSettingsUpdate, user_id: BigIntId | None = None, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    target_user_id = user_id if (user_id and current_user.is_admin_or_service) else current_user.user_id
+async def update_notification_settings(data: NotificationSettingsUpdate, current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    target_user_id = current_user.user_id
     settings = await db.get(NotificationSettings, target_user_id)
     if not settings:
         settings = NotificationSettings(
@@ -155,7 +152,10 @@ async def get_notification_by_id(notification_id: BigIntPath, current_user: Auth
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     if not current_user.is_admin_or_service and notification.user_id is not None and notification.user_id != current_user.user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
-    return notification
+    is_read = notification.is_read
+    if notification.user_id is None and not is_read:
+        is_read = await db.get(NotificationRead, (notification.id, current_user.user_id)) is not None
+    return _response(notification, is_read)
 
 
 @router.patch("/{notification_id}/read")
@@ -165,19 +165,42 @@ async def mark_as_read(notification_id: BigIntPath, current_user: AuthenticatedU
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     if not current_user.is_admin_or_service and notification.user_id is not None and notification.user_id != current_user.user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
-    notification.is_read = True
+    if notification.user_id is None:
+        # Анонс общий: отмечаем прочтение только для текущего пользователя
+        await db.execute(
+            pg_insert(NotificationRead)
+            .values(notification_id=notification.id, user_id=current_user.user_id)
+            .on_conflict_do_nothing()
+        )
+    else:
+        notification.is_read = True
     await db.commit()
     return {"status": "ok", "message": "Notification marked as read"}
 
 
 @router.patch("/read-all")
 async def mark_all_as_read(current_user: AuthenticatedUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    # Только уведомления владельца токена: user_id из запроса не принимаем
+    """Помечает прочитанными все уведомления владельца токена.
+
+    Меняются только его личные уведомления; анонсы отмечаются в notification_reads
+    и остаются непрочитанными для остальных пользователей.
+    """
     user_id = current_user.user_id
-    stmt = update(Notification).where(or_(Notification.user_id == user_id, Notification.user_id.is_(None)), Notification.is_read == False).values(is_read=True)
-    result = await db.execute(stmt)
+    personal = await db.execute(
+        update(Notification)
+        .where(Notification.user_id == user_id, Notification.is_read.is_(False))
+        .values(is_read=True)
+    )
+    unread_broadcasts = select(Notification.id, literal(user_id, BigInteger)).where(
+        Notification.user_id.is_(None), ~_is_read_by(user_id)
+    )
+    broadcasts = await db.execute(
+        pg_insert(NotificationRead)
+        .from_select(["notification_id", "user_id"], unread_broadcasts)
+        .on_conflict_do_nothing()
+    )
     await db.commit()
-    return {"status": "ok", "user_id": user_id, "updated_count": result.rowcount}
+    return {"status": "ok", "user_id": user_id, "updated_count": personal.rowcount + broadcasts.rowcount}
 
 
 @router.delete("/{notification_id}")

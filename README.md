@@ -51,17 +51,46 @@ docker-compose.yml        - запуск сервиса
 - `type`: String(30)
 - `related_event_id`: BigInteger, nullable
 - `related_booking_id`: BigInteger, nullable
-- `is_read`: Boolean, default false
+- `is_read`: Boolean, default false (для общих анонсов — только исторические отметки, см. ниже)
 - `created_at`: DateTime, default now()
+
+Таблица `notification_reads` — прочтение общих анонсов (`user_id IS NULL`) конкретным пользователем:
+- `notification_id`: BigInteger, FK `notifications.id` ON DELETE CASCADE
+- `user_id`: BigInteger, index
+- `read_at`: DateTime, default now()
+- первичный ключ `(notification_id, user_id)`
+
+Анонс один на всех, поэтому его флаг `is_read` не меняется при прочтении: иначе один
+пользователь отмечал бы анонс прочитанным для всех. Анонсы, у которых общий флаг
+уже стоял до миграции `c4d5e6f7a8b9`, остаются прочитанными.
 
 ## Эндпоинты
 
 - `POST /api/v1/notifications/` — Создание уведомления (service/admin).
-- `GET /api/v1/notifications/` — Список уведомлений владельца access token и общие анонсы (unread_only, limit, offset). `user_id` не нужен; передать чужой `user_id` может только admin/service, обычный пользователь получит 403.
-- `GET /api/v1/notifications/unread-count` — Количество непрочитанных уведомлений владельца access token (`user_id` — как в списке).
+- `GET /api/v1/notifications/` — Список уведомлений пользователя и общие анонсы (unread_only, limit, offset).
+- `GET /api/v1/notifications/unread-count` — Количество непрочитанных уведомлений.
 - `GET /api/v1/notifications/{notification_id}` — Получение одного уведомления по ID.
 - `PATCH /api/v1/notifications/{notification_id}/read` — Пометить одно уведомление как прочитанное.
-- `PATCH /api/v1/notifications/read-all` — Пометить все уведомления владельца access token как прочитанные. Параметра `user_id` нет: чужие уведомления так изменить нельзя. Ответ: `{"status": "ok", "user_id": 50, "updated_count": 2}`.
+- `PATCH /api/v1/notifications/read-all` — Пометить все уведомления пользователя как прочитанные.
+- `GET / PATCH /api/v1/notifications/settings` — Настройки уведомлений пользователя.
+
+Все эндпоинты, кроме `/health`, требуют `Authorization: Bearer <access_token>`.
+Пользователь определяется только по токену (`sub`): параметр `user_id` в query у
+списка, счётчика, `read-all` и настроек больше не поддерживается и игнорируется,
+даже для администратора. Без токена или с невалидным, просроченным или refresh-токеном
+ответ `401`, при `is_active=false` — `403`.
+
+```http
+PATCH /api/v1/notifications/read-all
+Authorization: Bearer <access_token>
+```
+
+```json
+{"status": "ok", "user_id": 10, "updated_count": 3}
+```
+
+`updated_count` — сколько личных уведомлений и анонсов стали прочитанными для этого
+пользователя. Чужие уведомления и прочтение анонсов другими пользователями не меняются.
 - `DELETE /api/v1/notifications/{notification_id}` — Удалить уведомление.
 - `POST /api/v1/notifications/sms` — Отправка SMS через провайдер Nikita в фоне (phone_number, message).
 - `GET /health` — Проверка работы сервиса.

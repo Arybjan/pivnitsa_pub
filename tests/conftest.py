@@ -35,10 +35,9 @@ def _default_test_auth_override():
 
 
 @pytest.fixture
-def as_user():
-    """Подменяет владельца access token: as_user(777) - запросы от пользователя 777."""
-    def login(user_id: int, role: str = "user") -> AuthenticatedUser:
+def act_as():
+    """Подменяет владельца токена: пользователь определяется только по токену."""
+    def _act_as(user_id: int, role: str = "user") -> None:
         user = AuthenticatedUser(user_id=user_id, role=role)
         app.dependency_overrides[get_current_user] = lambda: user
-        return user
-    return login
+    return _act_as

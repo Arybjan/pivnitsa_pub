@@ -80,13 +80,14 @@ async def test_integer_overflow_related_ids(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_integer_overflow_query_params(client: AsyncClient):
-    """Huge integers in GET /notifications?user_id=... and unread-count."""
+    """Huge integers in limit/offset; user_id из query больше не читается и игнорируется."""
     huge_int = 10**30
-    res = await client.get(f"/api/v1/notifications/?user_id={huge_int}")
-    assert res.status_code == 422, f"Expected 422 on huge user_id query param, got {res.status_code}"
+    res = await client.get(f"/api/v1/notifications/?limit={huge_int}")
+    assert res.status_code == 422, f"Expected 422 on huge limit, got {res.status_code}"
 
     res2 = await client.get(f"/api/v1/notifications/unread-count?user_id={huge_int}")
-    assert res2.status_code == 422, f"Expected 422 on huge user_id in unread-count, got {res2.status_code}"
+    assert res2.status_code == 200
+    assert res2.json()["user_id"] == 1
 
 
 @pytest.mark.asyncio
@@ -247,7 +248,7 @@ async def test_unicode_and_emoji_handling(client: AsyncClient):
 # ====================================================================
 
 @pytest.mark.asyncio
-async def test_concurrent_notification_creation(client: AsyncClient, as_user):
+async def test_concurrent_notification_creation(client: AsyncClient, act_as):
     """Simulate 30 concurrent creation requests for the same user."""
     async def create_one(idx: int):
         return await client.post("/api/v1/notifications/", json={
@@ -264,11 +265,11 @@ async def test_concurrent_notification_creation(client: AsyncClient, as_user):
         assert r.status_code == 201
 
     # Verify count
-    count_res = await client.get("/api/v1/notifications/unread-count?user_id=555")
+    act_as(555)
+    count_res = await client.get("/api/v1/notifications/unread-count")
     assert count_res.json()["unread_count"] == 30
 
     # Concurrent mark as read
-    as_user(555)
     res_mark = await client.patch("/api/v1/notifications/read-all")
     assert res_mark.status_code == 200
     assert res_mark.json()["updated_count"] == 30

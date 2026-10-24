@@ -62,7 +62,7 @@ async def test_broadcast_notification_visibility(auth_client):
 
         user_token = create_token(sub="12", role="user")
         get_res = await ac.get(
-            "/api/v1/notifications/?user_id=12",
+            "/api/v1/notifications/",
             headers={"Authorization": f"Bearer {user_token}"}
         )
         assert get_res.status_code == 200
