@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover, 
+  input:-webkit-autofill:focus, 
+  input:-webkit-autofill:active {
+      -webkit-box-shadow: 0 0 0 30px #1c1c1e inset !important; /* цвет фона твоего инпута */
+      -webkit-text-fill-color: white !important;
+      transition: background-color 5000s ease-in-out 0s;
+  }
+  
+  /* Убираем стрелки +/-, ибо есть свои кнопки */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+
+  html {
+    /* Убираем подсветку тапа на мобилках */
+    -webkit-tap-highlight-color: transparent;
+    /* Отключаем авто-зум при фокусе на input для айфонов */
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-tg-bg font-sans text-tg-text antialiased;
+    /* Окно тг, а не браузера */
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Скроллбар как в нативных тг-приложениях */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  /* Скроллбар в других браузерах */
+  html, body {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .btn-primary {
+    @apply bg-brand text-black hover:bg-brand-hover;
+  }
+
+  .btn-secondary {
+    @apply border border-white/5 bg-tg-secondary text-tg-text;
+  }
+
+  .card {
+    @apply overflow-hidden rounded-2xl border border-white/5 bg-tg-secondary;
+  }
+
+  .btn-outline-danger {
+    @apply bg-transparent text-red-400 border border-red-500/40;
+  }
+
+  .btn-outline-danger:hover {
+    @apply bg-red-500 text-white;
+  }
+
+
+  /* кнопка "Ждите меня! */
+  .btn-fancy {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    background-color: var(--tg-theme-button-color, #fec200);
+    color: var(--tg-theme-button-text-color, #000000);
+    box-shadow: 0 0 0 0 rgba(254, 194, 0, 0);
+    transition:
+      transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.3s ease,
+      color 0.3s ease;
+  }
+
+  .btn-fancy::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: #000;
+    transform: translateY(101%);
+    transition: transform 0.35s cubic-bezier(0.65, 0, 0.35, 1);
+  }
+
+  .btn-fancy:hover {
+    color: var(--accent, #fec200);
+    box-shadow: 0 8px 24px -6px rgba(254, 194, 0, 0.55);
+    transform: translateY(-2px);
+  }
+
+  .btn-fancy:hover::before {
+    transform: translateY(0);
+  }
+
+  .btn-fancy:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  /* кликбейт на кнопке */
+  .btn-fancy-pulse {
+    animation: btn-pulse 2.4s ease-out infinite;
+  }
+
+  @keyframes btn-pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(254, 194, 0, 0.55);
+    }
+    40%,
+    100% {
+      box-shadow: 0 0 0 10px rgba(254, 194, 0, 0);
+    }
+  }
+}
