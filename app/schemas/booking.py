@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Self
 
@@ -18,7 +18,9 @@ class BookingCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     table_id: int
-    event_id: int
+    # Без мероприятия - бронь на обычный вечер, тогда нужен starts_at
+    event_id: int | None = Field(default=None, gt=0)
+    starts_at: AwareDatetime | None = None
     guests: int = Field(gt=0)
     comment: str | None = Field(default=None, max_length=500)
 
@@ -27,6 +29,15 @@ class BookingCreate(BaseModel):
     def empty_comment_to_none(cls, value: str | None) -> str | None:
         # Пустой комментарий не храним: "" и пробелы равнозначны его отсутствию
         return value or None
+
+    @model_validator(mode="after")
+    def validate_when(self) -> Self:
+        # Время брони на мероприятие берётся из Event Service
+        if (self.event_id is None) == (self.starts_at is None):
+            raise ValueError("Provide either event_id or starts_at")
+        if self.starts_at is not None and self.starts_at <= datetime.now(timezone.utc):
+            raise ValueError("starts_at must be in the future")
+        return self
 
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]

@@ -51,7 +51,10 @@ class BookingService:
 
         # Дата мероприятия нужна, чтобы бронь не пересеклась
         # с бронью этого стола на обычный вечер в тот же день
-        starts_at = get_bookable_event_start(data.event_id)
+        if data.event_id is not None:
+            starts_at = get_bookable_event_start(data.event_id)
+        else:
+            starts_at = data.starts_at
 
         booking = Booking(
             user_id=user_id,
