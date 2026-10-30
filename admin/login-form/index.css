@@ -1,0 +1,369 @@
+/* Вход и регистрация (register-form подключает этот же файл) */
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 100vh;
+
+  /* мягкое свечение акцентом сверху */
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(254, 194, 0, 0.14), transparent 60%),
+    var(--bg-color);
+}
+
+
+.login-container {
+  width: 100%;
+  max-width: 420px;
+
+  padding: 24px 16px;
+}
+
+.login-card {
+  background: linear-gradient(180deg, #171717 0%, var(--card-bg) 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+
+  padding: 36px 32px 28px;
+
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+}
+
+
+/* Шапка: логотип, название, заведение */
+.card-header {
+  text-align: center;
+
+  margin-bottom: 28px;
+
+  & h1 {
+    font-size: 1.375rem;
+    font-weight: 700;
+
+    margin: 0 0 6px;
+  }
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 56px;
+  height: 56px;
+
+  background-color: var(--accent);
+  color: #000;
+
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(254, 194, 0, 0.25);
+
+  margin-bottom: 16px;
+
+  & svg {
+    width: 30px;
+    height: 30px;
+  }
+}
+
+.subtitle {
+  color: var(--text-muted);
+
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 2px;
+
+  text-transform: uppercase;
+
+  margin: 0;
+}
+
+
+/* Поля */
+.form-group {
+  display: flex;
+  flex-direction: column;
+
+  margin-bottom: 16px;
+}
+
+label {
+  color: var(--text-muted);
+
+  font-size: 0.8rem;
+  font-weight: 500;
+
+  margin-bottom: 8px;
+}
+
+input {
+  width: 100%;
+  height: 46px;
+
+  font-size: 1rem;
+
+  padding: 0 14px;
+
+  background-color: var(--input-bg);
+  color: var(--text-main);
+
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &::placeholder {
+    color: #52525b;
+  }
+
+  &:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(254, 194, 0, 0.15);
+    outline: none;
+  }
+
+  &:disabled {
+    color: var(--text-muted);
+  }
+}
+
+.input-wrapper {
+  display: flex;
+  align-items: center;
+
+  background-color: var(--input-bg);
+
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+
+  overflow: hidden;
+
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(254, 194, 0, 0.15);
+  }
+
+  & input {
+    border: none;
+    border-radius: 0;
+    box-shadow: none !important;
+  }
+}
+
+.country-code {
+  display: flex;
+  align-items: center;
+
+  height: 46px;
+
+  color: var(--text-muted);
+  background-color: rgba(255, 255, 255, 0.03);
+
+  font-size: 0.95rem;
+
+  padding: 0 12px;
+
+  border-right: 1px solid var(--border-color);
+}
+
+
+.input-error,
+.input-wrapper.input-error {
+  border-color: var(--danger) !important;
+}
+
+.error-message {
+  color: var(--danger);
+
+  font-size: 0.75rem;
+  line-height: 1.4;
+
+  margin-top: 6px;
+
+  min-height: 16px;
+
+  &:empty {
+    min-height: 0;
+    margin-top: 0;
+  }
+}
+
+
+/* Кнопки */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 100%;
+  height: 46px;
+
+  margin-top: 8px;
+  padding: 0 16px;
+
+  border: none;
+  border-radius: 10px;
+
+  font-size: 0.95rem;
+  font-weight: 600;
+
+  cursor: pointer;
+
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.btn-primary {
+  background-color: var(--accent);
+  color: #000;
+
+  &:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+  }
+}
+
+.btn-secondary {
+  background-color: rgba(255, 255, 255, 0.03);
+  color: var(--text-main);
+
+  border: 1px solid var(--border-color);
+
+  text-decoration: none;
+
+  &:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
+
+.btn-link {
+  display: block;
+
+  background: none;
+  color: var(--accent);
+
+  border: none;
+
+  font-size: 0.85rem;
+
+  margin: 12px auto 0;
+  padding: 4px;
+
+  cursor: pointer;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+#changePhoneBtn {
+  margin: 0 0 4px auto;
+  padding: 4px 0;
+
+  font-size: 0.8rem;
+}
+
+
+/* Разделитель "или войдите" */
+.divider {
+  display: flex;
+  align-items: center;
+
+  color: var(--text-muted);
+  font-size: 0.75rem;
+
+  margin: 20px 0;
+  gap: 12px;
+
+  &::before, &::after {
+    content: '';
+    flex: 1;
+
+    border-top: 1px solid var(--border-color);
+  }
+}
+
+
+/* Переключатель способа входа */
+.login-tabs {
+  display: flex;
+
+  background-color: var(--input-bg);
+
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+
+  padding: 4px;
+  margin-bottom: 20px;
+  gap: 4px;
+}
+
+.login-tab {
+  flex: 1;
+
+  background: none;
+  color: var(--text-muted);
+
+  border: none;
+  border-radius: 7px;
+
+  font-size: 0.875rem;
+  font-weight: 600;
+
+  padding: 9px;
+
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  &:hover:not(.active) {
+    color: var(--text-main);
+  }
+
+  &.active {
+    background-color: var(--accent);
+    color: #000;
+  }
+}
+
+
+/* Таймер повторной отправки */
+.timer-text {
+  font-size: 0.8rem;
+
+  color: var(--text-muted);
+
+  text-align: center;
+
+  margin: 4px 0 8px;
+}
+
+
+/* Подпись внизу карточки */
+.card-footer {
+  color: #52525b;
+
+  font-size: 0.75rem;
+  text-align: center;
+
+  margin: 24px 0 0;
+}
+
+
+@media (max-width: 420px) {
+  .login-card {
+    padding: 28px 20px 22px;
+  }
+}

@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  notification-service:
+    build: .
+    container_name: notification-service
+    ports:
+      - "8005:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@notification-postgres:5432/notifications_db
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - NIKITA_API_URL=https://smspro.nikita.kg/api/message
+      - NIKITA_LOGIN=test_login
+      - NIKITA_PASSWORD=test_password
+      - NIKITA_SENDER=TEST
+      - NIKITA_TEST_MODE=true
+    depends_on:
+      - notification-postgres
+    networks:
+      - nightclub-network
+
+  notification-postgres:
+    image: postgres:15-alpine
+    container_name: notification-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=notifications_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - notification_postgres_data:/var/lib/postgresql/data
+    networks:
+      - nightclub-network
+
+volumes:
+  notification_postgres_data:
+
+networks:
+  nightclub-network:
+    driver: bridge

@@ -1,0 +1,31 @@
+# --- Основной веб-фреймворк и сервер ---
+fastapi==0.141.1               # Веб-фреймворк: маршрутизация, эндпоинты, внедрение зависимостей (Depends)
+uvicorn[standard]==0.52.4      # ASGI-сервер для запуска FastAPI
+
+# --- База данных и миграции ---
+SQLAlchemy==2.0.52             # ORM: модели, сессии, запросы
+asyncpg==0.31.0                # Асинхронный драйвер PostgreSQL
+alembic==1.19.1                # Миграции схемы БД
+greenlet==3.5.5                # Поддержка асинхронности в SQLAlchemy ORM
+
+# --- Валидация и конфигурация ---
+pydantic[email]==2.13.4        # Схемы запросов/ответов, валидация email
+pydantic-settings==2.15.0      # Чтение настроек из .env
+python-dotenv==1.2.3           # Загрузка .env
+
+# --- Безопасность ---
+PyJWT==2.15.1                  # Выпуск и проверка JWT (access / refresh)
+bcrypt==5.0.0                  # Хеширование паролей
+
+# --- Redis (OTP-коды, refresh-сессии, rate limit) ---
+redis==8.1.0
+
+# --- HTTP-клиент (отправка SMS через Notification Service) ---
+httpx==0.28.1
+
+# --- Тестирование ---
+pytest==9.1.1
+pytest-asyncio==1.4.0
+aiosqlite==0.22.1              # In-memory SQLite для тестов
+fakeredis[lua]==2.39.0         # In-memory Redis для тестов (lua — для атомарной проверки OTP)
+respx==0.23.1                  # Мок HTTPX-запросов к Notification Service

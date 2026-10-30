@@ -1,0 +1,38 @@
+services:
+  payment-service:
+    build: .
+    container_name: pivnitsa-payment
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@payment-postgres:5432/payment_db
+      # RabbitMQ и Booking Service из docker-compose booking-service на этой же машине
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@host.docker.internal:5672/}
+      BOOKING_SERVICE_URL: ${BOOKING_SERVICE_URL:-http://host.docker.internal:8002}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8004:8004"
+    depends_on:
+      payment-postgres:
+        condition: service_healthy
+
+  payment-postgres:
+    image: postgres:17
+    container_name: pivnitsa-payment-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: payment_db
+    ports:
+      - "5436:5432"
+    volumes:
+      - payment_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d payment_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  payment_postgres_data:

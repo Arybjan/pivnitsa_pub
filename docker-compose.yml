@@ -1,0 +1,174 @@
+# Локальный стенд Pivnitsa: все сервисы + гостевой фронтенд + админка одной командой.
+#   cp .env.example .env && docker compose up -d --build
+#
+# Порты:  frontend 5173 | admin 3000 | auth 8001 | booking 8002 | venue 8003 | payment 8004
+#         notification 8005 | event 8006 | postgres 5440 | redis 6390
+#         rabbitmq 5672 (UI 15672, guest/guest)
+
+x-jwt: &jwt
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+  JWT_ALGORITHM: HS256
+
+x-depends-db: &depends-db
+  postgres:
+    condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5440:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6390:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  auth:
+    build: ${AUTH_DIR:-./backend/auth}
+    ports:
+      - "8001:8000"
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/auth_db
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: dev
+      # console - код только в лог и в ответ /otp/send (dev);
+      # notification - настоящая SMS через Notification Service -> Nikita SMS
+      SMS_PROVIDER: ${SMS_PROVIDER:-console}
+      OTP_EXPOSE_IN_RESPONSE: ${OTP_EXPOSE_IN_RESPONSE:-true}
+      NOTIFICATION_SERVICE_URL: http://notification:8000
+      CORS_ORIGINS: '["*"]'
+    depends_on:
+      <<: *depends-db
+      redis:
+        condition: service_healthy
+
+  event:
+    build: ${EVENT_DIR:-./backend/event}
+    ports:
+      - "8006:8001"
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/event_db
+      REDIS_URL: redis://redis:6379/1
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      AUTH_SERVICE_URL: http://auth:8000
+    depends_on:
+      <<: *depends-db
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  venue:
+    build: ${VENUE_DIR:-./backend/venue}
+    ports:
+      - "8003:8000"
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/venue_db
+      CORS_ORIGINS: "*"
+    depends_on: *depends-db
+
+  booking:
+    build: ${BOOKING_DIR:-./backend/booking}
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8002:8000"
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/booking_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      BOOKING_HOLD_MINUTES: "15"
+      # по нему считается дата брони
+      VENUE_TIMEZONE: Asia/Bishkek
+      # дата мероприятия для брони из приложения
+      EVENT_SERVICE_URL: http://event:8001
+      CORS_ORIGINS: "*"
+    depends_on:
+      <<: *depends-db
+      rabbitmq:
+        condition: service_healthy
+
+  payment:
+    build: ${PAYMENT_DIR:-./backend/payment}
+    ports:
+      - "8004:8004"
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/payment_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      BOOKING_SERVICE_URL: http://booking:8000
+      PAYMENT_GATEWAY_ENV: sandbox
+      CORS_ORIGINS: "*"
+    depends_on:
+      <<: *depends-db
+      rabbitmq:
+        condition: service_healthy
+
+  notification:
+    build: ${NOTIFICATION_DIR:-./backend/notification}
+    ports:
+      - "8005:8000"
+    environment:
+      <<: *jwt
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/notifications_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      # Nikita SMS (smspro.nikita.kg); TEST_MODE=true - шлюз принимает, но не отправляет
+      NIKITA_API_URL: ${NIKITA_API_URL:-https://smspro.nikita.kg/api/message}
+      NIKITA_LOGIN: ${NIKITA_LOGIN:-}
+      NIKITA_PASSWORD: ${NIKITA_PASSWORD:-}
+      NIKITA_SENDER: ${NIKITA_SENDER:-}
+      NIKITA_TEST_MODE: ${NIKITA_TEST_MODE:-true}
+      VENUE_TIMEZONE: Asia/Bishkek
+      VENUE_SERVICE_URL: http://venue:8000
+    depends_on:
+      <<: *depends-db
+      rabbitmq:
+        condition: service_healthy
+
+  # Статическая админка
+  admin:
+    image: nginx:1.29-alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ${ADMIN_FRONTEND_DIR:-./admin}:/usr/share/nginx/html:ro
+      - ./admin/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+  # Гостевое WebApp (клиент для гостей / PWA)
+  frontend:
+    build: ${FRONTEND_DIR:-./frontend}
+    ports:
+      - "5173:80"
+
+volumes:
+  postgres_data:

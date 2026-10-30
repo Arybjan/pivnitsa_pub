@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="../normalize/normalize.css?v=20261013b">
+  <link rel="stylesheet" href="../ui/ui.css?v=20261013b">
+  <link rel="stylesheet" href="./dashboard.css?v=20261025a">
+  <title>Управление залом: Бар Пивница</title>
+
+  <!-- FabricJS для геометрического canvas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+</head>
+<body>
+  
+  <!-- Верхняя панель управления -->
+  <header class="top-panel">
+    
+    <!-- Режим отображения разделов -->
+    <div class="top-navigation">
+      <a href="../main-menu/main.html" class="btn-back">&larr; На главную</a>
+      
+      <div class="view-toggle">
+        <button id="viewCanvasBtn" class="btn-toggle active">Схема зала</button>
+        <button id="viewReservationsBtn" class="btn-toggle">Список броней</button>
+      </div>
+
+      <!-- Дата, на которую показываются схема и брони (общая для обеих вкладок) -->
+      <div class="date-nav">
+        <button type="button" id="prevDayBtn" class="btn-icon" aria-label="Предыдущий день">&lsaquo;</button>
+        <input type="date" id="reservationDateFilter" aria-label="Дата">
+        <button type="button" id="nextDayBtn" class="btn-icon" aria-label="Следующий день">&rsaquo;</button>
+        <button type="button" id="todayBtn" class="btn-today">Сегодня</button>
+      </div>
+    </div>
+
+
+    <div id="canvasHeaderControls" class="header-controls">
+
+      <div class="floor-selector">
+        <button id="floor1Btn" class="btn-floor active">1 этаж</button>
+        <button id="floor2Btn" class="btn-floor">2 этаж</button>
+      </div>
+
+      <!-- Статистика статусов столиков -->
+      <!-- Легенда и статистика столиков этажа -->
+      <div class="stats-bar">
+        <div class="stat-item">
+          <span class="stat-dot free"></span>
+          Свободно: <strong id="statFreeCount">0</strong>
+        </div>
+        <div class="stat-item">
+          <span class="stat-dot booked"></span>
+          Забронировано: <strong id="statBookedCount">0</strong>
+        </div>
+        <div class="stat-item">
+          <span class="stat-dot occupied"></span>
+          Занято: <strong id="statOccupiedCount">0</strong>
+        </div>
+        <div class="stat-item">
+          <span class="stat-dot disabled"></span>
+          Недоступно: <strong id="statDisabledCount">0</strong>
+        </div>
+        <div class="stat-item stat-total">
+          Столов: <strong id="statTotalSeats">0</strong>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="addTableBtn" class="btn btn-secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Добавить стол</button>
+        <button id="saveLayoutBtn" class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>Сохранить схему</button>
+      </div>
+
+    </div>
+  </header>
+
+
+
+  <!-- Схема зала -->
+  <main id="canvasView" class="editor-container">
+
+    <div class="canvas-wrapper">
+      <canvas id="hallCanvas" width="900" height="600"></canvas>
+    </div>
+
+    <!-- Боковая панель параметров столика -->
+    <aside class="sidebar">
+      <h2>Свойства стола</h2>
+
+      <div id="noSelectionText" class="info-text">
+        Нажмите на стол, чтобы изменить его параметры или забронировать.
+        <br><br>
+        Двойной клик по столу - сразу новая бронь.
+      </div>
+
+      <!-- Бронь выбранного стола на выбранную дату -->
+      <div id="tableBookingInfo" class="booking-info hidden">
+        <div id="tableBookingText"></div>
+        <button type="button" id="openTableBookingBtn" class="btn btn-secondary btn-block hidden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>Открыть бронь</button>
+        <button type="button" id="bookTableBtn" class="btn btn-primary btn-block"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Забронировать стол</button>
+      </div>
+
+      <form id="tablePropsForm" class="hidden">
+
+        <div class="form-group">
+          <label>Номер стола</label>
+          <input type="text" id="propNumber">
+        </div>
+
+        <div class="form-group">
+          <label>Вместимость (чел)</label>
+          <input type="number" id="propCapacity" min="1" max="30">
+        </div>
+
+        <div class="form-group">
+          <label for="propPrice">Цена стола (сом)</label>
+          <input type="number" id="propPrice" min="0" step="0.01" placeholder="Не задана">
+        </div>
+
+        <div class="form-group">
+          <label>Статус</label>
+          <select id="propStatus">
+            <option value="free">Свободен</option>
+            <option value="booked">Забронирован</option>
+            <option value="occupied">Занят</option>
+            <option value="disabled">Недоступен</option>
+          </select>
+        </div>
+
+        <button type="button" id="deleteTableBtn" class="btn btn-outline-danger btn-block"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>Удалить стол</button>
+
+      </form>
+    </aside>
+
+  </main>
+
+
+  
+  <!-- Список бронирований -->
+  <section id="reservationsSection" class="reservations-container hidden">
+
+      <!-- Заголовок только для печати -->
+      <h2 id="printTitle" class="print-title"></h2>
+
+      <div class="reservations-toolbar">
+        <div class="filter-group">
+          <input type="search" id="reservationSearch" placeholder="Поиск: имя, телефон или № стола" aria-label="Поиск броней">
+        </div>
+
+        <div class="toolbar-actions">
+          <button id="openReservationModalBtn" class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Новая бронь</button>
+
+          <button id="printReservationsBtn" class="btn btn-secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>Распечатать</button>
+          <button id="exportReservationsBtn" class="btn btn-secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg>Выгрузить</button>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Время</th>
+              <th>Стол (этаж)</th>
+              <th>Гость</th>
+              <th>Гостей</th>
+              <th>Сумма</th>
+              <th>Предоплата</th>
+              <th>Оплата</th>
+              <th>Статус</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody id="reservationsTableBody"></tbody>
+        </table>
+      </div>
+
+    </section>
+
+
+
+    <!-- Новая бронь -->
+    <div id="reservationModal" class="modal-backdrop hidden">
+      <div class="modal-window">
+
+        <div class="modal-header">
+          <h3 id="modalTitle">Новое бронирование</h3>
+          <button type="button" id="closeModalBtn" class="btn-close">&times;</button>
+        </div>
+
+        <form id="createReservationForm">
+          <!-- Создаем ли новую бронь или редактируем существующую -->
+          <input type="hidden" id="modalReservationId" value="">
+
+          <div class="form-group">
+            <label for="modalFloorSelect">Этаж</label>
+            <select id="modalFloorSelect" required>
+              <option value="1">1 этаж</option>
+              <option value="2">2 этаж</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="modalTableSelect">Столик</label>
+            <select id="modalTableSelect" required></select>
+          </div>
+
+          <div class="form-group">
+            <label for="modalDate">Дата</label>
+            <input type="date" id="modalDate" required>
+          </div>
+
+          <div class="form-group">
+            <label for="modalEventSelect">Мероприятие</label>
+            <select id="modalEventSelect">
+              <option value="">Без мероприятия</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="modalTime">Время</label>
+            <input type="time" id="modalTime" required value="19:00">
+          </div>
+
+          <div class="form-group">
+            <label for="modalGuestName">Имя гостя</label>
+            <input type="text" id="modalGuestName" placeholder="Например: Алексей" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="modalGuestPhone">Телефон</label>
+            <div class="phone-input">
+              <span class="phone-prefix">+996</span>
+              <input type="tel" id="modalGuestPhone" inputmode="numeric" autocomplete="off" placeholder="555 123 456" maxlength="11" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="modalGuestsCount">Гостей</label>
+              <input type="number" id="modalGuestsCount" min="1" value="2" required>
+            </div>
+
+            <div class="form-group">
+              <label for="modalTotalAmount">Сумма (сом)</label>
+              <input type="number" id="modalTotalAmount" min="0" placeholder="0">
+            </div>
+
+            <div class="form-group">
+              <label for="modalPrepayment">Предоплата</label>
+              <input type="number" id="modalPrepayment" min="0" value="0">
+            </div>
+          </div>
+
+          <div id="capacityWarning" class="hidden">
+            ⚠️ Количество гостей превышает вместимость столика. Убедитесь, что столики будут сдвинуты.
+          </div>
+
+          <div id="modalComment" class="booking-comment hidden">
+            <span class="booking-comment-label">Комментарий гостя</span>
+            <p id="modalCommentText"></p>
+          </div>
+
+          <div class="form-group">
+            <label for="modalPaymentStatus">Оплата</label>
+            <select id="modalPaymentStatus">
+              <option value="unpaid">Оплата на месте</option>
+              <option value="paid">Предоплата внесена</option>
+            </select>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" id="cancelBookingBtn" class="btn btn-outline-danger hidden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>Отменить бронь</button>
+            <button type="button" id="cancelModalBtn" class="btn btn-secondary">Закрыть</button>
+            <button type="submit" id="submitReservationBtn" class="btn btn-primary">Забронировать</button>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  <script src="../ui/ui.js?v=20261013b"></script>
+  <script src="../api/api.js?v=20261013b"></script>
+
+  <script src="./dashboard.js?v=20261025a"></script>
+</body>
+</html>

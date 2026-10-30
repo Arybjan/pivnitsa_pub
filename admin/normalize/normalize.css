@@ -1,0 +1,114 @@
+/* Цветовая палитра */
+:root {
+  --bg-color: #000000;
+  --card-bg: #121212;
+
+  --text-main: #ffffff;
+  --text-muted: #a1a1aa;
+
+  --accent: #fec200;
+  --accent-hover: #e0aa00;
+
+  --border-color: #27272a;
+  --input-bg: #09090b;
+
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+}
+
+
+
+/* Фикс автозаполнения браузера */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px var(--input-bg) inset !important;
+
+  /* Плавный переход цвета фона, чтобы стили не "мигали" при автозаполнении  */
+  -webkit-text-fill-color: var(--text-main) !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+
+
+* {
+  box-sizing: border-box;
+
+  margin: 0;
+  padding: 0;
+
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+html {
+  line-height: 1.15;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-main);
+
+  min-height: 100vh;
+}
+
+a {
+  background-color: transparent;
+  color: inherit;
+
+  text-decoration: none;
+}
+
+img {
+  border-style: none;
+  max-width: 100%;
+  display: block;
+}
+
+button,
+input,
+optgroup,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 100%;
+  line-height: 1.15;
+  margin: 0;
+}
+
+/* Чтобы иконка календаря не была черной */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
+button,
+select {
+  text-transform: none;
+}
+
+button,
+[type="button"],
+[type="reset"],
+[type="submit"] {
+  -webkit-appearance: button;
+  cursor: pointer;
+}
+
+/* Сброс внутренних рамок кнопок Firefox */
+button::-moz-focus-inner,
+[type="button"]::-moz-focus-inner,
+[type="reset"]::-moz-focus-inner,
+[type="submit"]::-moz-focus-inner {
+  border-style: none;
+  padding: 0;
+}
+
+
+
+.hidden {
+  display: none !important;
+}
