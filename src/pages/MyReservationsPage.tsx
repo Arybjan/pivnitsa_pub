@@ -9,8 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { cancelBooking } from "../api/booking";
 import { authStorage } from "../lib/auth-storage";
 import { formatDateShort } from "../lib/date";
-import { createPayment } from "../api/payment";
-import { API } from "../api/client";
+import { PaymentQrModal } from "../components/Payment/PaymentQrModal";
 
 
 export function MyReservationsPage() {
@@ -20,8 +19,8 @@ export function MyReservationsPage() {
 
   // стейт для модалки отмены
   const [bookingToCancel, setBookingToCancel] = useState<BookingResponse | null>(null);
-  // стейт для возобновления платежа
-  const [payingId, setPayingId] = useState<number | null>(null);
+  // бронь, для которой показываем QR оплаты
+  const [bookingToPay, setBookingToPay] = useState<BookingResponse | null>(null);
 
 
   // если не авторизован - просим войти
@@ -65,34 +64,6 @@ export function MyReservationsPage() {
   }
 
 
-  const handlePay = async (booking: BookingResponse) => {
-    setPayingId(booking.id);
-    try {
-      const token = await authStorage.getToken();
-      if(!token) throw new Error('Вы не авторизованы');
-
-      // создаем платеж для уже существующей брони
-      const payment = await createPayment({ booking_id: booking.id }, token);
-
-      if(payment.checkout_url) {
-        // при относительной ссылке с /, добавляем домен бэкенда
-        const fullUrl = payment.checkout_url.startsWith('http') ?
-              payment.checkout_url : `${API.payment}${payment.checkout_url}`;
-
-        const tg = window.Telegram?.WebApp;
-
-        if(tg?.openLink) tg.openLink(fullUrl);
-        else window.open(fullUrl, '_blank');
-      } else throw new Error('Не удалось получить ссылку на оплату');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Ошибка при переходе к оплате';
-      alert(message);
-    } finally {
-      setPayingId(null);
-    }
-  };
-
-
   return (
     <div className="min-h-screen bg-tg-bg text-tg-text flex flex-col">
       <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col">
@@ -132,8 +103,7 @@ export function MyReservationsPage() {
                 <ReservationCard
                   res={res}
                   onCancel={() => setBookingToCancel(res)}
-                  onPay={() => handlePay(res)}
-                  isPaying={payingId === res.id}
+                  onPay={() => setBookingToPay(res)}
                 />
               </div>
             ))
@@ -145,13 +115,18 @@ export function MyReservationsPage() {
           onClose={() => setBookingToCancel(null)}
           onConfirm={handleCancelConfirm}
         />
+
+        <PaymentQrModal
+          booking={bookingToPay}
+          onClose={() => setBookingToPay(null)}
+        />
       </div>
     </div>
   );
 }
 
 
-function ReservationCard({ res, onCancel, onPay, isPaying }: { res: BookingResponse; onCancel: () => void; onPay: () => void; isPaying: boolean; }) {
+function ReservationCard({ res, onCancel, onPay }: { res: BookingResponse; onCancel: () => void; onPay: () => void; }) {
   // форматируем дату
   const displayDate = res.booking_date ? formatDateShort(res.booking_date) : '-';
   const displayTime = res.starts_at ? new Date(res.starts_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -207,10 +182,9 @@ function ReservationCard({ res, onCancel, onPay, isPaying }: { res: BookingRespo
           <button
             type="button"
             onClick={onPay}
-            disabled={isPaying}
-            className="btn btn-primary px-4 py-2 text-xs font-bold disabled:opacity-50"
+            className="btn btn-primary px-4 py-2 text-xs font-bold"
           >
-            {isPaying ? 'Переход...' : 'Оплатить'}
+            Оплатить
           </button>
         )}
       </div>

@@ -1,5 +1,5 @@
 import { ru } from 'date-fns/locale'
-import { formatInTimeZone } from 'date-fns-tz'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { CONFIG } from './config';
 
 
@@ -60,4 +60,40 @@ export function maxBookingDateISO(): string {
 // читаемая дата для UI: '12 июля'
 export function formatDateShort(iso: string): string {
   return formatInTimeZone(new Date(iso), TZ, 'd MMMM', { locale: ru });
+}
+
+
+// === ВРЕМЯ БРОНИ ===
+// дата мероприятия по Бишкеку: '2026-10-14'
+export function dateInBishkek(iso: string): string {
+  return formatInTimeZone(new Date(iso), TZ, 'yyyy-MM-dd');
+}
+
+// мероприятие еще не началось (на начавшееся бэкенд бронь не примет)
+export function isUpcoming(iso: string): boolean {
+  return new Date(iso).getTime() > Date.now();
+}
+
+// время мероприятия по Бишкеку: '22:00'
+export function formatTime(iso: string): string {
+  return formatInTimeZone(new Date(iso), TZ, 'HH:mm');
+}
+
+// дата + время по Бишкеку -> ISO с часовым поясом для бэкенда
+export function bishkekToISO(date: string, time: string): string {
+  return fromZonedTime(`${date}T${time}:00`, TZ).toISOString();
+}
+
+// доступное время брони на дату: с открытия до LAST_BOOKING_TIME, на сегодня - только будущее
+export function bookingTimeSlots(date: string): string[] {
+  const [lastH, lastM] = CONFIG.LAST_BOOKING_TIME.split(':').map(Number);
+  const now = Date.now();
+  const slots: string[] = [];
+
+  for (let min = CONFIG.OPEN_HOUR * 60; min <= lastH * 60 + lastM; min += CONFIG.BOOKING_TIME_STEP) {
+    const time = `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+    if (new Date(bishkekToISO(date, time)).getTime() > now) slots.push(time);
+  }
+
+  return slots;
 }

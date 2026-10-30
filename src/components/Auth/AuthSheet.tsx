@@ -28,15 +28,11 @@ export function AuthSheet({ onClose, onSuccess }: AuthSheetProps) {
       setVerificationToken(token);
       setStep('password');
     } else {
-      try {
-        const data = await loginByToken(token);
-        await login(data.access_token, data.refresh_token, data.user);
-        
-        onSuccess();
-      } catch(err: unknown) {
-        const message = err instanceof Error ? err.message : '';
-        console.error(message);
-      }
+      // ошибку не глотаем: её покажет CodeStep
+      const data = await loginByToken(token);
+      await login(data.access_token, data.refresh_token, data.user);
+
+      onSuccess();
     }
   };
 

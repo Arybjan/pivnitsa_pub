@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
+  <!-- ЗАГЛУШКА: заменить на реальный QR бара (путь в CONFIG.PAYMENT_QR_URL) -->
+  <rect width="300" height="300" rx="16" fill="#ffffff"/>
+  <g fill="#111111">
+    <rect x="24" y="24" width="72" height="72"/><rect x="36" y="36" width="48" height="48" fill="#fff"/><rect x="48" y="48" width="24" height="24"/>
+    <rect x="204" y="24" width="72" height="72"/><rect x="216" y="36" width="48" height="48" fill="#fff"/><rect x="228" y="48" width="24" height="24"/>
+    <rect x="24" y="204" width="72" height="72"/><rect x="36" y="216" width="48" height="48" fill="#fff"/><rect x="48" y="228" width="24" height="24"/>
+  </g>
+  <text x="150" y="146" font-family="sans-serif" font-size="20" font-weight="700" text-anchor="middle" fill="#111">QR-код</text>
+  <text x="150" y="172" font-family="sans-serif" font-size="14" text-anchor="middle" fill="#666">заглушка</text>
+</svg>

@@ -6,7 +6,7 @@ interface CodeStepProps {
   phone: string;
   purpose: 'login' | 'register';
   onBack: () => void;
-  onVerifySuccess: (token: string) => void;
+  onVerifySuccess: (token: string) => Promise<void>;
 }
 
 
@@ -52,7 +52,7 @@ export function CodeStep({ phone, purpose, onBack, onVerifySuccess }: CodeStepPr
     setIsLoading(true);
     try {
       const data = await verifyOtp(`+996${phone}`, code, purpose);
-      onVerifySuccess(data.verification_token); // передаем токен
+      await onVerifySuccess(data.verification_token); // передаем токен
     } catch(err: unknown) {
       const message = err instanceof Error ? err.message : 'Неверный код';
       setError(translateError(message));

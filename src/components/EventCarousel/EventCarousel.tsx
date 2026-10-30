@@ -43,8 +43,17 @@ export function EventCarousel() {
   const canScrollPrev = (scrollState & 1) !== 0;
   const canScrollNext = (scrollState & 2) !== 0;
 
+  // индикаторы: trimSnaps склеивает последние слайды в одну позицию,
+  // поэтому точек столько, сколько позиций прокрутки, а не ивентов
+  const getSnapCount = useCallback(() => emblaApi?.scrollSnapList().length ?? 0, [emblaApi]);
+  const getSelectedSnap = useCallback(() => emblaApi?.selectedScrollSnap() ?? 0, [emblaApi]);
+
+  const snapCount = useSyncExternalStore(subscribe, getSnapCount, getSnapCount);
+  const selectedSnap = useSyncExternalStore(subscribe, getSelectedSnap, getSelectedSnap);
+
   const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
   const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
+  const scrollTo = useCallback((index: number) => emblaApi?.scrollTo(index), [emblaApi]);
 
 
   // при выборе афиши
@@ -141,6 +150,24 @@ export function EventCarousel() {
           </button>
         )}
       </div>
+
+      {/* индикаторы положения карусели */}
+      {snapCount > 1 && (
+        <div className="flex justify-center gap-1.5 mt-3">
+          {Array.from({ length: snapCount }, (_, index) => (
+            <button
+              key={index}
+              type="button"
+              onClick={() => scrollTo(index)}
+              aria-label={`Перейти к слайду ${index + 1}`}
+              aria-current={index === selectedSnap}
+              className={'h-2 rounded-full transition-all duration-300 ' +
+                (index === selectedSnap ? 'w-5 bg-brand' : 'w-2 bg-white/20 hover:bg-white/40')
+              }
+            />
+          ))}
+        </div>
+      )}
 
       <EventModal event={selectedEvent} onClose={handleClose} />
     </>

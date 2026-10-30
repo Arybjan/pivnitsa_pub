@@ -37,36 +37,44 @@ export function PhoneStep({ onCodeSent }: PhoneStepProps) {
     if(!agree) return setError('Пожалуйста, ознакомьтесь с нашими условиями.');
 
     setIsLoading(true);
+    // Сначала регистрация: только она явно отвечает 409, если номер уже есть.
+    // Отправка кода на вход для незнакомого номера всегда успешна (бэк не раскрывает, есть ли аккаунт),
+    // поэтому по ней нельзя понять, новый это пользователь или нет.
+    let purpose: 'login' | 'register' = 'register';
     try {
-      // попытка логина
-      const data = await sendOtp(`+996${phone}`, 'login');
-      // в режиме разработки приходит debug_code
-      if(data.debug_code) {
-        // %c - стандартный спецификатор форматирования в браузерных консолях (сделает код более видным)
-        // он говорит браузеру: "Примени стили, идущие следующим аргументом, к предстоящему тексту"
-        console.log('%c[SMS CODE]: ' + data.debug_code, 'color: #fec200; font-size: 16px; font-weight: bold;');
-        alert(`Тестовый режим! Ваш код: ${data.debug_code}`);
-      }
-
-      onCodeSent(phone, 'login');
-    } catch {
-      // если аккаунта нет, регистрируем
       try {
-        const regData = await sendOtp(`+996${phone}`, 'register');
-        if(regData.debug_code) {
-          console.log('%c[SMS CODE]: ' + regData.debug_code, 'color: #fec200; font-size: 16px; font-weight: bold;');
-          alert(`Тестовый режим! Ваш код: ${regData.debug_code}`);
-        }
-
-        onCodeSent(phone, 'register');
-      } catch(regErr: unknown) {
-        const message = regErr instanceof Error ? regErr.message : 'Ошибка отправки кода.';
-        setError(translateError(message));
-      } finally {
-        setIsLoading(false);
+        await sendCode('register');
+      } catch(err: unknown) {
+        if(!(err instanceof Error) || err.message !== 'Phone number is already registered') throw err;
+        purpose = 'login';
+        await sendCode('login');
       }
-    };
-  }
+
+      onCodeSent(phone, purpose);
+    } catch(err: unknown) {
+      const message = err instanceof Error ? err.message : 'Ошибка отправки кода.';
+      // код уже отправлен недавно и ещё действует — пускаем вводить его
+      if(message === 'Code was sent recently, try again later') {
+        onCodeSent(phone, purpose);
+        return;
+      }
+      setError(translateError(message));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+  const sendCode = async (purpose: 'login' | 'register') => {
+    const data = await sendOtp(`+996${phone}`, purpose);
+    // в режиме разработки приходит debug_code
+    if(data.debug_code) {
+      // %c - стандартный спецификатор форматирования в браузерных консолях (сделает код более видным)
+      // он говорит браузеру: "Примени стили, идущие следующим аргументом, к предстоящему тексту"
+      console.log('%c[SMS CODE]: ' + data.debug_code, 'color: #fec200; font-size: 16px; font-weight: bold;');
+      alert(`Тестовый режим! Ваш код: ${data.debug_code}`);
+    }
+  };
 
 
   return (

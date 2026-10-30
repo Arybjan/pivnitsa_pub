@@ -2,17 +2,18 @@ import { useCallback, useState } from "react";
 import { EventCarousel } from "../components/EventCarousel/EventCarousel";
 import { useBarOpenStatus } from "../hooks/useBarOpenStatus";
 import { HallMap } from "../components/HallMap/HallMap";
-import type { MapTable } from "../types/api";
+import type { BookingResponse, MapTable } from "../types/api";
 import { TableModal } from "../components/HallMap/TableModal";
 import { DatePicker } from "../components/HallMap/DatePicker";
-import { todayISO } from "../lib/date";
+import { bishkekToISO, dateInBishkek, isUpcoming, todayISO } from "../lib/date";
 import { Link } from "react-router-dom";
 import { AuthSheet } from "../components/Auth/AuthSheet";
 import { authStorage } from "../lib/auth-storage";
 import { useRequireAuth } from "../hooks/useRequireAuth";
 import { useHalls, useHallMap } from "../hooks/useHallMap";
 import { createBooking } from "../api/booking";
-import { createPayment } from "../api/payment";
+import { PaymentQrModal } from "../components/Payment/PaymentQrModal";
+import { useQueryClient } from "@tanstack/react-query";
 import { NewbieGuideline } from "../components/Tutorial/NewbieGuideline";
 import { NotificationsDropdown } from "../components/Layout/NotificationsDropdown";
 import { ProfileDropdown } from "../components/Layout/ProfileDropdown";
@@ -29,6 +30,9 @@ export function HomePage() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  // созданная бронь, для которой показываем QR оплаты
+  const [paymentBooking, setPaymentBooking] = useState<BookingResponse | null>(null);
+  const queryClient = useQueryClient();
 
   const openAuth = useCallback(() => setIsAuthOpen(true), []);
   const closeAuth = useCallback(() => setIsAuthOpen(false), []);
@@ -47,13 +51,16 @@ export function HomePage() {
   // достаем ивенты
   const { data: eventsData } = usePublishedEvents();
   const events = eventsData?.items ?? [];
-  const firstEventId = events.length > 0 ? events[0].id : 1; // id первого ивента или undefined при их отсутствии
+  // мероприятие на выбранную дату (еще не начавшееся) - бронь будет на него, иначе на обычный вечер
+  const eventOnDate = events.find((ev) =>
+    dateInBishkek(ev.starts_at) === selectedDate && isUpcoming(ev.starts_at)
+  ) ?? null;
 
   // проверка, грузится ли что-то
   const isInitialLoading = isHallsLoading || (selectedHallId && !hallMap);
 
 
-  const handleBook = async (guests: number, comment: string) => {
+  const handleBook = async (guests: number, comment: string, time: string) => {
     if(!selectedTable) return;
 
     setIsBooking(true);
@@ -66,25 +73,17 @@ export function HomePage() {
       // создаем бронь
       const booking = await createBooking({
         table_id: selectedTable.id,
-        event_id: firstEventId,
+        ...(eventOnDate
+          ? { event_id: eventOnDate.id }
+          : { starts_at: bishkekToISO(selectedDate, time) }),
         guests,
         comment: comment || undefined,
       }, token);
 
-      // создаем платеж на основе этой брони
-      const payment = await createPayment({ booking_id: booking.id }, token);
-
-      // открываем ссылку на оплату (при ее наличии)
-      if(payment.checkout_url) {
-        // в TG открываем через системный браузер
-        const tg = window.Telegram?.WebApp;
-        if(tg?.openLink) tg.openLink(payment.checkout_url);
-        // fallback для браузера
-        else window.open(payment.checkout_url);
-
-        // закрываем модалку бронирования
-        setSelectedTable(null);
-      } else throw new Error('Не удалось получить ссылку на оплату');
+      // закрываем модалку бронирования и показываем QR для оплаты
+      setSelectedTable(null);
+      setPaymentBooking(booking);
+      queryClient.invalidateQueries({ queryKey: ['myBookings'] });
     } catch(err: unknown) {
       const message = err instanceof Error ? err.message : 'Не удалось создать бронь';
       setBookingError(message);
@@ -239,13 +238,21 @@ export function HomePage() {
         </footer>
 
         {/* модалка столика (главное, что любая модалка внутри React-дерева) */}
+        {/* key: при смене стола или даты модалка открывается с чистыми полями */}
         <TableModal
+          key={`${selectedTable?.id}-${selectedDate}`}
           table={selectedTable}
           date={selectedDate}
+          event={eventOnDate}
           onClose={() => setSelectedTable(null)}
           onBook={handleBook}
           isBooking={isBooking}
           bookingError={bookingError}
+        />
+
+        <PaymentQrModal
+          booking={paymentBooking}
+          onClose={() => setPaymentBooking(null)}
         />
 
         {/* тестовая регистрация */}

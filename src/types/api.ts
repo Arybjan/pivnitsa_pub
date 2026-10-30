@@ -109,9 +109,11 @@ export interface HallMap {
 
 export type BookingStatus = 'PENDING_PAYMENT' | 'CONFIRMED' | 'CANCELLED' | 'EXPIRED';
 
+// либо event_id (время берется из мероприятия), либо starts_at (бронь на обычный вечер)
 export interface BookingCreate {
   table_id: number;
-  event_id: number;
+  event_id?: number;
+  starts_at?: string;
   guests: number;
   comment?: string;
 }
@@ -121,7 +123,7 @@ export interface BookingResponse {
   user_id: number;
   table_id: number;
   table_number?: number;
-  event_id: number;
+  event_id: number | null;
   starts_at: string | null;
   booking_date: string | null;
   guests: number;
