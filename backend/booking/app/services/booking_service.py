@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from app.messaging.publisher import BookingEventPublisher, booking_payload, publisher
 from app.models.booking import ACTIVE_STATUSES, Booking, BookingSource, BookingStatus
 from app.repositories.booking_repository import BookingRepository
-from app.services.event_client import get_bookable_event_start
+from app.services.event_client import get_bookable_event_start, EventNotBookable
 from app.schemas.booking import (
     AdminBookingCreate,
     AdminBookingUpdate,
@@ -31,6 +31,14 @@ def local_date(moment: datetime) -> date:
     return moment.astimezone(VENUE_TIMEZONE).date()
 
 
+def default_slot() -> datetime:
+    now_local = datetime.now(VENUE_TIMEZONE)
+    target_today = now_local.replace(hour=22, minute=0, second=0, microsecond=0)
+    if now_local >= target_today:
+        target_today += timedelta(days=1)
+    return target_today.astimezone(timezone.utc)
+
+
 class BookingService:
 
     def __init__(
@@ -49,22 +57,27 @@ class BookingService:
         data: BookingCreate,
     ) -> Booking:
 
-        if data.event_id is not None:
-            # Дата мероприятия нужна, чтобы бронь не пересеклась
-            # с бронью этого стола на обычный вечер в тот же день
-            starts_at = get_bookable_event_start(data.event_id)
-        else:
-            if not data.starts_at:
-                raise ValueError("starts_at is required when booking without an event")
+        event_id = data.event_id
+        starts_at = None
+
+        if event_id is not None:
+            try:
+                starts_at = get_bookable_event_start(event_id)
+            except EventNotBookable:
+                event_id = None
+                starts_at = data.starts_at or default_slot()
+        elif data.starts_at:
             if data.starts_at <= datetime.now(timezone.utc):
                 raise ValueError("starts_at must be in the future")
             starts_at = data.starts_at
+        else:
+            starts_at = default_slot()
 
         booking = Booking(
             user_id=user_id,
             phone=phone,
             table_id=data.table_id,
-            event_id=data.event_id,
+            event_id=event_id,
             starts_at=starts_at,
             booking_date=local_date(starts_at) if starts_at else None,
             guests=data.guests,

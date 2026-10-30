@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -36,9 +36,11 @@ def get_interval(
     starts_at: Annotated[AwareDatetime | None, Query()] = None,
     ends_at: Annotated[AwareDatetime | None, Query()] = None,
 ) -> tuple[datetime | None, datetime | None]:
-    if (starts_at is None) != (ends_at is None):
-        raise HTTPException(422, "Provide both starts_at and ends_at")
-    if starts_at is not None and ends_at <= starts_at:
+    if starts_at is not None and ends_at is None:
+        ends_at = starts_at + timedelta(hours=4)
+    elif ends_at is not None and starts_at is None:
+        starts_at = ends_at - timedelta(hours=4)
+    elif starts_at is not None and ends_at is not None and ends_at <= starts_at:
         raise HTTPException(422, "ends_at must be later than starts_at")
     return starts_at, ends_at
 

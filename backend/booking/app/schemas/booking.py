@@ -29,12 +29,6 @@ class BookingCreate(BaseModel):
         # Пустой комментарий не храним: "" и пробелы равнозначны его отсутствию
         return value or None
 
-    @model_validator(mode="after")
-    def validate_event_or_time(self) -> Self:
-        if not self.event_id and not self.starts_at:
-            raise ValueError("Either event_id or starts_at must be provided")
-        return self
-
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]
 GuestName = Annotated[str, Field(min_length=1, max_length=100)]
