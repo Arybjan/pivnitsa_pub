@@ -112,6 +112,7 @@ services:
       VENUE_TIMEZONE: Asia/Bishkek
       # дата мероприятия для брони из приложения
       EVENT_SERVICE_URL: http://event:8001
+      VENUE_SERVICE_URL: http://venue:8000
       CORS_ORIGINS: "*"
     depends_on:
       <<: *depends-db

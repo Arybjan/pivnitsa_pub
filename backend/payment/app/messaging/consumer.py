@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustConnection
 import aio_pika
 from app.core.config import settings
@@ -26,8 +27,28 @@ async def handle_booking_event(routing_key: str, payload: dict) -> None:
         return
 
     booking_id = int(payload["booking_id"])
+    refund_percentage = 1.0
+
+    # Правило бара: проверка 24 часов до начала бронирования
+    starts_at_str = payload.get("starts_at")
+    if starts_at_str:
+        try:
+            starts_at = datetime.fromisoformat(starts_at_str.replace("Z", "+00:00"))
+            if starts_at.tzinfo is None:
+                starts_at = starts_at.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            if starts_at - now <= timedelta(hours=24):
+                refund_percentage = 0.5
+                reason = f"{reason} [штраф 50% за отмену менее чем за 24ч]"
+            else:
+                reason = f"{reason} [полный возврат 100%]"
+        except Exception as exc:
+            logger.warning("Could not calculate 24h refund rule: %s", exc)
+
     async with async_session_maker() as session:
-        payment = await payment_service.refund_for_booking(session, booking_id, reason)
+        payment = await payment_service.refund_for_booking(
+            session, booking_id, reason, refund_percentage=refund_percentage
+        )
 
     if payment is None:
         logger.info("No paid payment for booking %s, nothing to refund", booking_id)

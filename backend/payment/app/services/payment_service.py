@@ -81,8 +81,15 @@ class PaymentService:
         if active:
             return self._resolve_active_payment(active, user)
 
-        # 4. Сумма — только с сервера
-        amount = (settings.DEPOSIT_PER_GUEST * int(booking["guests"])).quantize(Decimal("0.01"))
+        # 4. Сумма депозита: цена стола (если задана) или тариф за гостя
+        amount = None
+        if booking.get("total_amount"):
+            amount = Decimal(str(booking["total_amount"])).quantize(Decimal("0.01"))
+        elif booking.get("prepayment"):
+            amount = Decimal(str(booking["prepayment"])).quantize(Decimal("0.01"))
+
+        if not amount or amount <= Decimal("0.00"):
+            amount = (settings.DEPOSIT_PER_GUEST * int(booking["guests"])).quantize(Decimal("0.01"))
 
         payment = Payment(
             booking_id=booking_id,
@@ -213,12 +220,24 @@ class PaymentService:
 
         return {"status": "acknowledged"}
 
-    async def request_refund(self, db: AsyncSession, payment: Payment, reason: str) -> bool:
+    async def request_refund(
+        self,
+        db: AsyncSession,
+        payment: Payment,
+        reason: str,
+        refund_amount: Optional[Decimal] = None,
+    ) -> bool:
         """SUCCEEDED -> REFUND_PENDING. Возвращает False, если возврат уже начат или невозможен."""
+        values = {
+            "status": PaymentStatus.REFUND_PENDING.value,
+            "refund_reason": reason[:255],
+        }
+        if refund_amount is not None:
+            values["amount"] = refund_amount
         stmt = (
             update(Payment)
             .where(Payment.id == payment.id, Payment.status == PaymentStatus.SUCCEEDED.value)
-            .values(status=PaymentStatus.REFUND_PENDING.value, refund_reason=reason[:255])
+            .values(**values)
         )
         result = await db.execute(stmt)
         await db.commit()
@@ -270,7 +289,13 @@ class PaymentService:
         await self.request_refund(db, payment, reason)
         return await self.process_refund(db, payment_id)
 
-    async def refund_for_booking(self, db: AsyncSession, booking_id: int, reason: str) -> Optional[Payment]:
+    async def refund_for_booking(
+        self,
+        db: AsyncSession,
+        booking_id: int,
+        reason: str,
+        refund_percentage: float = 1.0,
+    ) -> Optional[Payment]:
         stmt = select(Payment).where(
             Payment.booking_id == booking_id,
             Payment.status.in_([PaymentStatus.SUCCEEDED.value, PaymentStatus.REFUND_PENDING.value]),
@@ -279,7 +304,11 @@ class PaymentService:
         if not payment:
             return None
 
-        await self.request_refund(db, payment, reason)
+        refund_amount = None
+        if refund_percentage < 1.0:
+            refund_amount = (payment.amount * Decimal(str(refund_percentage))).quantize(Decimal("0.01"))
+
+        await self.request_refund(db, payment, reason, refund_amount=refund_amount)
         return await self.process_refund(db, payment.id)
 
     async def retry_pending_refunds(self, db: AsyncSession) -> int:

@@ -135,6 +135,7 @@ class TableRead(ReadModel):
 class TableNumber(ReadModel):
     id: int
     number: int
+    price: Decimal | None = None
 
 
 class Interval(Input):

@@ -25,6 +25,19 @@ fail() { echo "Ошибка: $*" >&2; exit 1; }
 LOGIN=$(curl -s -X POST "$AUTH/auth/login" -H 'Content-Type: application/json' \
   -d "{\"phone\":\"$PHONE\",\"password\":\"$PASSWORD\"}")
 TOKEN=$(echo "$LOGIN" | json "d.get('access_token', '')")
+if [ -z "$TOKEN" ]; then
+  OTP_RESP=$(curl -s -X POST "$AUTH/auth/otp/send" -H 'Content-Type: application/json' -d "{\"phone\":\"$PHONE\"}")
+  OTP_CODE=$(echo "$OTP_RESP" | json "d.get('debug_code', '')")
+  if [ -n "$OTP_CODE" ]; then
+    V_RESP=$(curl -s -X POST "$AUTH/auth/otp/verify" -H 'Content-Type: application/json' -d "{\"phone\":\"$PHONE\",\"code\":\"$OTP_CODE\"}")
+    V_TOKEN=$(echo "$V_RESP" | json "d.get('verification_token', '')")
+    if [ -n "$V_TOKEN" ]; then
+      REG_RESP=$(curl -s -X POST "$AUTH/auth/register" -H 'Content-Type: application/json' \
+        -d "{\"verification_token\":\"$V_TOKEN\",\"password\":\"$PASSWORD\",\"first_name\":\"Тест\",\"last_name\":\"Гость\"}")
+      TOKEN=$(echo "$REG_RESP" | json "d.get('access_token', '')")
+    fi
+  fi
+fi
 [ -n "$TOKEN" ] || fail "гость $PHONE не вошёл: $LOGIN"
 AUTH_HEADER="Authorization: Bearer $TOKEN"
 
@@ -56,9 +69,9 @@ cat <<EOF
 Бронь #$BOOKING_ID: стол id $TABLE_ID на «${EVENT_TITLE}», гостей: $GUESTS
 Сумма к оплате: $AMOUNT сом. Бронь держится 15 минут.
 
-Откройте страницу оплаты и нажмите «Оплатить тестовой картой Visa»:
+Откройте страницу оплаты по QR-коду и подтвердите оплату («Я оплатил(а) депозит»):
   $PAYMENT$CHECKOUT
 
 Потом в админке: «Схема зала» -> «Список броней» на дату мероприятия.
-Бронь будет «Активна», оплата «Оплачено». Если отменить её там - деньги вернутся.
+Бронь станет «Активна», оплата «Оплачено». Если отменить бронь там — депозит вернётся по правилам заведения (100% за сутки, 50% менее 24ч).
 EOF

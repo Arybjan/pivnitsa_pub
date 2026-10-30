@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
@@ -21,7 +22,7 @@ from app.schemas.booking import (
 from app.services.booking_service import BookingService
 from app.models.booking import Booking
 from app.services.event_client import EventNotBookable, EventServiceUnavailable
-from app.services.venue_client import get_table_numbers
+from app.services.venue_client import get_table_details, get_table_numbers
 
 
 router = APIRouter(
@@ -31,14 +32,23 @@ router = APIRouter(
 
 
 def to_responses(bookings: list[Booking]) -> list[BookingResponse]:
-    """Брони с номерами столов: один запрос к Venue на весь ответ, без N+1."""
-    numbers = get_table_numbers({booking.table_id for booking in bookings})
-    return [
-        BookingResponse.model_validate(booking).model_copy(
-            update={"table_number": numbers.get(booking.table_id)}
-        )
-        for booking in bookings
-    ]
+    """Брони с номерами столов и суммами: один запрос к Venue на весь ответ, без N+1."""
+    details = get_table_details({booking.table_id for booking in bookings})
+    result = []
+    for booking in bookings:
+        item = BookingResponse.model_validate(booking)
+        t_info = details.get(booking.table_id)
+        if t_info:
+            table_number = t_info.get("number")
+            table_price = t_info.get("price")
+            total_amount = booking.total_amount
+            if total_amount is None and table_price is not None:
+                total_amount = Decimal(str(table_price))
+            item = item.model_copy(
+                update={"table_number": table_number, "total_amount": total_amount}
+            )
+        result.append(item)
+    return result
 
 
 def to_response(booking: Booking) -> BookingResponse:

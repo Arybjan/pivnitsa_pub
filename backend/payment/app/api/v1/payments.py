@@ -1,5 +1,6 @@
 import html
 import json
+import urllib.parse
 from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
@@ -129,7 +130,39 @@ async def render_checkout_page(
     badge = "badge-succeeded" if payment.status == PaymentStatus.SUCCEEDED.value else "badge-pending"
 
     if is_pending:
-        action_html = '<button class="btn" onclick="submitPayment()">Оплатить тестовой картой Visa</button>'
+        wa_text = f"Здравствуйте! Чек оплаты брони №{payment.booking_id} на сумму {payment.amount} сом"
+        wa_link = f"https://wa.me/996555000001?text={urllib.parse.quote(wa_text)}"
+        action_html = f"""
+        <div style="text-align: center; margin: 16px 0;">
+            <p style="color: #94a3b8; font-size: 14px; margin-bottom: 12px;">
+                Отсканируйте QR-код в приложении банка (Mbank / Optima / О!Деньги) для оплаты депозита:
+            </p>
+            <div style="background: white; padding: 12px; border-radius: 12px; display: inline-block; margin-bottom: 10px;">
+                <svg width="180" height="180" viewBox="0 0 24 24" fill="none">
+                    <rect x="2" y="2" width="8" height="8" rx="1" fill="#0f172a"/>
+                    <rect x="4" y="4" width="4" height="4" fill="white"/>
+                    <rect x="14" y="2" width="8" height="8" rx="1" fill="#0f172a"/>
+                    <rect x="16" y="4" width="4" height="4" fill="white"/>
+                    <rect x="2" y="14" width="8" height="8" rx="1" fill="#0f172a"/>
+                    <rect x="4" y="16" width="4" height="4" fill="white"/>
+                    <rect x="14" y="14" width="3" height="3" fill="#0f172a"/>
+                    <rect x="19" y="14" width="3" height="3" fill="#0f172a"/>
+                    <rect x="14" y="19" width="3" height="3" fill="#0f172a"/>
+                    <rect x="19" y="19" width="3" height="3" fill="#0f172a"/>
+                    <rect x="11" y="5" width="2" height="14" fill="#0f172a"/>
+                    <rect x="5" y="11" width="14" height="2" fill="#0f172a"/>
+                </svg>
+            </div>
+            <p style="font-size: 13px; color: #94a3b8; margin: 4px 0 16px;">Получатель: Бар «Пивница»</p>
+        </div>
+        <button class="btn" onclick="submitPayment()">Я оплатил(а) депозит</button>
+        <p style="text-align: center; margin-top: 14px;">
+            <a href="{wa_link}" target="_blank" rel="noopener noreferrer"
+               style="color: #22c55e; text-decoration: none; font-size: 14px; font-weight: 600;">
+                💬 Отправить чек в WhatsApp
+            </a>
+        </p>
+        """
     elif payment.status == PaymentStatus.SUCCEEDED.value:
         action_html = (
             '<p style="color: #10b981; text-align: center; font-weight: 600;">✓ Оплата успешно завершена!</p>'
