@@ -12,10 +12,10 @@ export function useHalls() {
 }
 
 
-export function useHallMap(hallId: number | undefined) {
+export function useHallMap(hallId: number | undefined, startsAt?: string, endsAt?: string) {
   return useQuery({
-    queryKey: ['hallMap', hallId],
-    queryFn: () => getHallMap(hallId!),
+    queryKey: ['hallMap', hallId, startsAt, endsAt],
+    queryFn: () => getHallMap(hallId!, startsAt, endsAt),
     enabled: hallId !== undefined,
   });
 }

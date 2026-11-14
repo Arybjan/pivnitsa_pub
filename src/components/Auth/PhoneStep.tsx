@@ -45,7 +45,7 @@ export function PhoneStep({ onCodeSent }: PhoneStepProps) {
       try {
         await sendCode('register');
       } catch(err: unknown) {
-        if(!(err instanceof Error) || err.message !== 'Phone number is already registered') throw err;
+        if(!(err instanceof Error) || !err.message.toLowerCase().includes('already registered')) throw err;
         purpose = 'login';
         await sendCode('login');
       }

@@ -50,7 +50,7 @@ export function EventCard({ event, onOpen }: EventCardProps) {
         <h3 className="text-white text-xl font-bold leading-tight mb-2 line-clamp-2">
           {event.title}
         </h3>
-        <p className="text-white/70 text-sm leading-snug line-clamp-2">
+        <p className="text-white/70 text-sm leading-snug line-clamp-2 break-all">
           {event.description || 'Описание отсутствует.'}
         </p>
 

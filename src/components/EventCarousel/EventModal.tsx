@@ -133,7 +133,7 @@ export function EventModal({ event, onClose }: EventModalProps) {
             {event.title}
           </h2>
 
-          <p className="text-white/70 text-base leading-relaxed whitespace-pre-line">
+          <p className="text-white/70 text-base leading-relaxed whitespace-pre-line break-words">
             {event.description}
           </p>
 

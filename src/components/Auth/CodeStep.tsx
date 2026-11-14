@@ -64,6 +64,8 @@ export function CodeStep({ phone, purpose, onBack, onVerifySuccess }: CodeStepPr
 
   const handleResend = async () => {
     setError('');
+    setIsLoading(true);
+    setCode('');
 
     try {
       const data = await sendOtp(`+996${phone}`, purpose);
@@ -77,6 +79,8 @@ export function CodeStep({ phone, purpose, onBack, onVerifySuccess }: CodeStepPr
       const message = err instanceof Error ? err.message : 'Не удалось повторно отправить код.'
       setError(translateError(message));
       console.error(err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -120,6 +124,7 @@ export function CodeStep({ phone, purpose, onBack, onVerifySuccess }: CodeStepPr
           <button
             type="button"
             onClick={handleResend}
+            disabled={isLoading}
             className="text-brand hover:text-brand-hover transition-colors font-semibold"
           >
             Отправить снова

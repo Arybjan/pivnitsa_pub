@@ -49,7 +49,7 @@ export function EventListItem({ event, onOpen }: EventListItemProps) {
             {event.title}
           </h3>
 
-          <p className="text-tg-hint text-xs leading-snug line-clamp-2">
+          <p className="text-tg-hint text-xs leading-snug line-clamp-2 break-words">
             {truncate(event.description || 'Описание отсутствует.', 90)}
           </p>
         </div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Event, MapTable } from "../../types/api";
 import { CONFIG } from "../../lib/config";
-import { bookingTimeSlots, formatDateShort, formatTime } from "../../lib/date";
+import { bishkekToISO, formatDateShort, formatTime } from "../../lib/date";
 
 
 interface TableModalProps {
@@ -38,12 +38,9 @@ export function TableModal({ table, date, event, onClose, onBook, isBooking, boo
 
   const [comment, setComment] = useState('');
 
-  // на сегодня в списке только еще не наступившее время
-  const timeSlots = bookingTimeSlots(date);
-  const [time, setTime] = useState<string>(() =>
-    timeSlots.includes(CONFIG.DEFAULT_BOOKING_TIME) ? CONFIG.DEFAULT_BOOKING_TIME : timeSlots[0] ?? ''
-  );
-  const noTimeLeft = !event && timeSlots.length === 0;
+  // если есть ивент на этот день - ставим время ивента, иначе стандартное
+  const [time, setTime] = useState<string>(() => event ? formatTime(event.starts_at) : CONFIG.DEFAULT_BOOKING_TIME);
+  const [timeError, setTimeError] = useState('');
 
 
   useEffect(() => {
@@ -75,7 +72,21 @@ export function TableModal({ table, date, event, onClose, onBook, isBooking, boo
 
   const handleSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if(guests > table.capacity || noTimeLeft) return;
+    setTimeError('');
+
+    if(guests > table.capacity) return;
+    if(!time) return setTimeError('Укажите время');
+
+    const [h, m] = time.split(':').map(Number);
+    const mins = h * 60 + m;
+
+    // рабочее время бара - 1140 минут до 23:59 или 300 минут от 00:00 до 05:00
+    const isValid = mins >= CONFIG.OPEN_HOUR * 60 || mins <= CONFIG.CLOSE_HOUR * 60;
+    if(!isValid) return setTimeError(`Бар работает с ${CONFIG.OPEN_HOUR}:00 до 0${CONFIG.CLOSE_HOUR}:00`);
+
+    // проверяем, что выбранное время еще не прошло (при сегодняшней брони)
+    const selectedDateTime = bishkekToISO(date, time);
+    if(new Date(selectedDateTime).getTime() <= Date.now()) return setTimeError('Нельзя забронировать столик в прошлом!');
 
     onBook(guests, comment, time);
   };
@@ -138,28 +149,25 @@ export function TableModal({ table, date, event, onClose, onBook, isBooking, boo
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* время выбирается только для брони без мероприятия */}
-          {!event && (
-            <div>
-              <label htmlFor="booking-time" className="block text-tg-hint text-sm mb-2">Время</label>
+          <div>
+            <label htmlFor="booking-time" className="block text-tg-hint text-sm mb-2">
+              Время
+            </label>
+            <input
+              id="booking-time"
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-tg-text outline-none focus:border-brand/50 transition-colors"
+            />
+            {timeError && <p className="text-red-400 text-xs mt-2">{timeError}</p>}
 
-              {noTimeLeft ? (
-                <p className="text-amber-400 text-sm">
-                  На сегодня бронирование уже закрыто. Выберите другую дату.
-                </p>
-              ) : (
-                <select
-                  id="booking-time"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-tg-text outline-none focus:border-brand/50 transition-colors"
-                >
-                  {timeSlots.map((slot) => (
-                    <option key={slot} value={slot} className="bg-tg-secondary">{slot}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-          )}
+            {event && (
+              <p className="text-brand text-xs mt-2">
+                ⚡ В это время проходит: {event.title}
+              </p>
+            )}
+          </div>
 
           <div>
             <label className="block text-tg-hint text-sm mb-2">Количество гостей</label>
@@ -228,7 +236,7 @@ export function TableModal({ table, date, event, onClose, onBook, isBooking, boo
 
           <button
             type="submit"
-            disabled={isBooking || noTimeLeft}
+            disabled={isBooking}
             className="btn btn-fancy btn-fancy-pulse w-full py-4 text-base font-bold disabled:opacity-50"
           >
             {isBooking ? 'Оформление...' : 'Забронировать и оплатить'}

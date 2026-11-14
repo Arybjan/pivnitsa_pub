@@ -19,6 +19,7 @@ import { NotificationsDropdown } from "../components/Layout/NotificationsDropdow
 import { ProfileDropdown } from "../components/Layout/ProfileDropdown";
 import { Preloader } from "../components/Layout/Preloader";
 import { usePublishedEvents } from "../hooks/useEvents";
+import { CONFIG } from "../lib/config";
 
 
 export function HomePage() {
@@ -46,7 +47,9 @@ export function HomePage() {
   const selectedHallId = userSelectedHallId ?? halls?.[0]?.id;
 
   // получаем карту зала
-  const { data: hallMap } = useHallMap(selectedHallId);
+  const mapStartsAt = bishkekToISO(selectedDate, CONFIG.DEFAULT_BOOKING_TIME);
+  const mapEndsAt = new Date(new Date(mapStartsAt).getTime() + 4 * 60 * 60 * 1000).toISOString();
+  const { data: hallMap } = useHallMap(selectedHallId, mapStartsAt, mapEndsAt);
 
   // достаем ивенты
   const { data: eventsData } = usePublishedEvents();
@@ -70,12 +73,25 @@ export function HomePage() {
       const token = await authStorage.getToken();
       if(!token) throw new Error('Вы не авторизованы');
 
+      const selectedDateTime = bishkekToISO(selectedDate, time);
+      const selectedTs = new Date(selectedDateTime).getTime();
+
+      // ищем ивент в это время
+      const overlappingEvent = events.find(ev => {
+        const evStart = new Date(ev.starts_at).getTime();
+        // если нет времени окончания, считаем, что ивент длится всё рабочее время
+        const evEnd = ev.ends_at ? new Date(ev.ends_at).getTime() : evStart + 8 * 60 * 60 * 1000;
+
+        return selectedTs >= evStart && selectedTs < evEnd;
+      });
+      
       // создаем бронь
       const booking = await createBooking({
         table_id: selectedTable.id,
-        ...(eventOnDate
-          ? { event_id: eventOnDate.id }
-          : { starts_at: bishkekToISO(selectedDate, time) }),
+        // если время попадает на ивент - передаем event_id, иначе просто starts_at
+        ...(overlappingEvent
+          ? { event_id: overlappingEvent.id, starts_at: selectedDateTime }
+          : { starts_at: selectedDateTime }),
         guests,
         comment: comment || undefined,
       }, token);
