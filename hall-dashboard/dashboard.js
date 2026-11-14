@@ -4,10 +4,6 @@ const canvas = new fabric.Canvas('hallCanvas', {
   selection: false // запрет выделения нескольких объектов
 });
 
-const wrapper = document.querySelector('.canvas-wrapper');
-canvas.setWidth(wrapper.clientWidth);
-canvas.setHeight(wrapper.clientHeight);
-
 
 // глобальный запрет выворачивания столиков наизнанку
 fabric.Object.prototype.lockScalingFlip = true;

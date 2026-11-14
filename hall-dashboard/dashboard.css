@@ -444,14 +444,16 @@ body {
   flex: 1;
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
+
+  padding: 25px;
 
   background-color: var(--input-bg);
 
   border: 1px dashed var(--border-color);
   border-radius: 8px;
 
-  overflow: hidden;
+  overflow: auto;
 }
 
 /* Рамка вокруг Canvas (от самого Fabric) */
